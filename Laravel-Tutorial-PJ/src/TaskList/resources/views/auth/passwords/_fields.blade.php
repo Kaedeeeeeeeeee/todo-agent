@@ -1,0 +1,2 @@
+<div class="field"><label for="password">パスワード（8文字以上）</label><input id="password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></div>
+<div class="field"><label for="password_confirmation">パスワード（確認）</label><input id="password_confirmation" name="password_confirmation" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></div>

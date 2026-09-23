@@ -1,0 +1,33 @@
+# Track the active application, its runtime configuration, and requirements only.
+/*
+!/.gitignore
+!/README.md
+!/Laravel-Tutorial-PJ/
+!/学习资料/
+
+/Laravel-Tutorial-PJ/*
+!/Laravel-Tutorial-PJ/compose.yaml
+!/Laravel-Tutorial-PJ/.env.example
+!/Laravel-Tutorial-PJ/docker/
+!/Laravel-Tutorial-PJ/src/
+/Laravel-Tutorial-PJ/src/*
+!/Laravel-Tutorial-PJ/src/TaskList/
+
+/学习资料/*
+!/学习资料/ToDo_APP_要件定義.md
+
+# Credentials, databases, dependencies, and generated local files.
+**/.env
+**/.env.*
+!**/.env.example
+**/auth.json
+**/credentials*.json
+**/*.pem
+**/*.key
+**/*.sqlite*
+**/*.sql
+**/*.sql.gz
+**/*.log
+**/vendor/
+**/node_modules/
+**/.DS_Store
