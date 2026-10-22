@@ -167,25 +167,6 @@ a:focus-visible {
     font-weight: 650;
     letter-spacing: -0.035em;
 }
-.brand-mark {
-    display: grid;
-    place-items: center;
-    width: 29px;
-    height: 29px;
-    color: var(--primary-foreground);
-    background: var(--primary);
-    border-radius: 7px;
-    font-size: 21px;
-}
-.brand-caption {
-    font-size: 11px;
-    letter-spacing: 0;
-    font-weight: 400;
-    color: var(--muted-foreground);
-    border-left: 1px solid var(--border);
-    margin-left: 13px;
-    padding-left: 22px;
-}
 .site-header nav {
     display: flex;
     align-items: center;
@@ -760,9 +741,6 @@ a:focus-visible {
     }
 }
 @media (max-width: 850px) {
-    .brand-caption {
-        display: none;
-    }
     .site-header nav > a {
         display: none;
     }
