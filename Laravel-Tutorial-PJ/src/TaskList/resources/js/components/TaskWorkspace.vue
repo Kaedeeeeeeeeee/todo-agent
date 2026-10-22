@@ -122,14 +122,8 @@ function toggle(event, task) {
             >
         </aside>
         <section class="workspace-main" aria-labelledby="workspace-title">
-            <div class="workspace-breadcrumb">
-                ワークスペース <span>/</span> {{ folder.title }}
-            </div>
             <header class="workspace-heading">
                 <div>
-                    <div class="heading-label">
-                        <AppIcon name="folder" /><span>マイタスク</span>
-                    </div>
                     <h1 id="workspace-title">{{ folder.title }}</h1>
                 </div>
                 <Button as-child class="add-task-button"
@@ -337,16 +331,9 @@ function toggle(event, task) {
                                     {{
                                         tasks.length
                                             ? '一致するタスクがありません'
-                                            : '最初のタスクを追加しましょう'
+                                            : 'タスクがありません'
                                     }}
                                 </h2>
-                                <p>
-                                    {{
-                                        tasks.length
-                                            ? '検索する言葉や絞り込み条件を変えてみてください。'
-                                            : '小さなタスクに分けることから、はじめてみましょう。'
-                                    }}
-                                </p>
                                 <Button
                                     v-if="tasks.length"
                                     type="button"

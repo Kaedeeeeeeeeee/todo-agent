@@ -3,7 +3,6 @@
 @section('content')
     <section class="card form-card">
         <h1>パスワードを再設定</h1>
-        <p>登録したメールアドレスへ再設定リンクを送信します。</p>
         @include('share.errors')
         <form data-ui-form method="POST" action="{{ route('password.email') }}">
             @csrf
