@@ -5,7 +5,7 @@ Laravel 入門講座をもとに開発する、個人向け To Do アプリで�
 - **第1版**：ユーザー認証、フォルダ管理、タスクの作成・編集・削除、期限・状態の管理。
 - **第2版（計画）**：Codex SDK を使った Gmail・Slack からのタスク整理と、AI による進捗確認。
 
-詳細は [要件定義書](学习资料/ToDo_APP_要件定義.md) を参照してください。
+詳細は [要件定義書](docs/todo-app-requirements.md) を参照してください。
 
 ## 構成
 
@@ -14,7 +14,7 @@ Laravel 入門講座をもとに開発する、個人向け To Do アプリで�
 | `Laravel-Tutorial-PJ/src/TaskList/` | 開発対象の Laravel アプリとテスト |
 | `Laravel-Tutorial-PJ/compose.yaml` | ローカル開発用の PHP・Nginx・MySQL・Mailpit |
 | `Laravel-Tutorial-PJ/docker/` | コンテナのビルド・設定ファイル |
-| `学习资料/ToDo_APP_要件定義.md` | アプリの要件定義 |
+| `docs/todo-app-requirements.md` | アプリの要件定義 |
 
 参考 PDF、旧版の練習プロジェクト、分析結果、バックアップ、実データは管理対象に含めません。既存のローカルディレクトリ構成を保ったまま、上記のファイルを管理します。
 

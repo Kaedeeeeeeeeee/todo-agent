@@ -3,7 +3,7 @@
 !/.gitignore
 !/README.md
 !/Laravel-Tutorial-PJ/
-!/学习资料/
+!/docs/
 
 /Laravel-Tutorial-PJ/*
 !/Laravel-Tutorial-PJ/compose.yaml
@@ -13,8 +13,8 @@
 /Laravel-Tutorial-PJ/src/*
 !/Laravel-Tutorial-PJ/src/TaskList/
 
-/学习资料/*
-!/学习资料/ToDo_APP_要件定義.md
+/docs/*
+!/docs/todo-app-requirements.md
 
 # Credentials, databases, dependencies, and generated local files.
 **/.env
