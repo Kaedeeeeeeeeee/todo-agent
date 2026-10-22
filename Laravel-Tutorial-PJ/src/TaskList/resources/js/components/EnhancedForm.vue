@@ -1,7 +1,16 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { ja } from '@nuxt/ui/locale';
-import AppIcon from './AppIcon.vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+} from '@/components/ui/select';
 
 const props = defineProps({
     action: String,
@@ -27,96 +36,105 @@ function submit(event) {
     else submitting.value = true;
 }
 </script>
-
 <template>
-    <UApp :locale="ja">
-        <form
-            :action="action"
-            method="POST"
-            class="enhanced-form"
-            @submit="submit"
-        >
-            <input
-                v-for="field in hiddenFields"
-                :key="field.name"
-                type="hidden"
-                :name="field.name"
-                :value="field.value"
-            />
-            <template v-for="field in fields" :key="field.name">
-                <label v-if="field.type === 'checkbox'" class="remember-field">
-                    <input
-                        v-model="values[field.name]"
-                        type="checkbox"
-                        :name="field.name"
-                        :value="field.checkedValue"
-                    />
-                    {{ field.label }}
-                </label>
-                <UFormField
-                    v-else
-                    :label="field.label"
-                    :required="field.required"
-                    :error="errors[field.name]?.[0]"
+    <form :action="action" method="POST" class="enhanced-form" @submit="submit">
+        <input
+            v-for="field in hiddenFields"
+            :key="field.name"
+            type="hidden"
+            :name="field.name"
+            :value="field.value"
+        />
+        <template v-for="field in fields" :key="field.name">
+            <label v-if="field.type === 'checkbox'" class="remember-field"
+                ><input
+                    v-model="values[field.name]"
+                    type="checkbox"
                     :name="field.name"
+                    :value="field.checkedValue"
+                />{{ field.label }}</label
+            >
+            <div
+                v-else
+                class="enhanced-field"
+                :data-invalid="errors[field.name] ? true : undefined"
+            >
+                <Label :for="field.id"
+                    >{{ field.label
+                    }}<span v-if="field.required" class="required-mark"
+                        >*</span
+                    ></Label
                 >
-                    <template v-if="field.type === 'select'">
-                        <USelect
+                <template v-if="field.type === 'select'">
+                    <Select v-model="values[field.name]">
+                        <SelectTrigger
                             :id="field.id"
-                            v-model="values[field.name]"
-                            :items="field.options"
-                            size="lg"
                             class="w-full"
                             :aria-invalid="!!errors[field.name]"
+                            :aria-describedby="
+                                errors[field.name]
+                                    ? `${field.id}-error`
+                                    : undefined
+                            "
+                            ><SelectValue
+                        /></SelectTrigger>
+                        <SelectContent
+                            ><SelectGroup
+                                ><SelectItem
+                                    v-for="option in field.options"
+                                    :key="option.value"
+                                    :value="option.value"
+                                    >{{ option.label }}</SelectItem
+                                ></SelectGroup
+                            ></SelectContent
                         >
-                            <template #trailing
-                                ><AppIcon name="arrow" class="select-chevron"
-                            /></template>
-                        </USelect>
-                        <input
-                            type="hidden"
-                            :name="field.name"
-                            :value="values[field.name]"
-                        />
-                    </template>
-                    <UInput
-                        v-else
-                        :id="field.id"
-                        v-model="values[field.name]"
+                    </Select>
+                    <input
+                        type="hidden"
                         :name="field.name"
-                        :type="field.type"
-                        :required="field.required"
-                        :autocomplete="field.autocomplete"
-                        :autofocus="field.autofocus"
-                        :min="field.min"
-                        :minlength="field.minlength"
-                        :maxlength="field.maxlength"
-                        size="lg"
-                        class="w-full"
-                        :aria-invalid="!!errors[field.name]"
+                        :value="values[field.name]"
                     />
-                </UFormField>
-            </template>
-            <div class="form-submit-row">
-                <UButton
-                    v-if="cancel"
-                    :to="cancel"
-                    target="_self"
-                    color="neutral"
-                    variant="outline"
-                    size="lg"
-                    >キャンセル</UButton
+                </template>
+                <Input
+                    v-else
+                    :id="field.id"
+                    v-model="values[field.name]"
+                    :name="field.name"
+                    :type="field.type"
+                    :required="field.required"
+                    :autocomplete="field.autocomplete"
+                    :autofocus="field.autofocus"
+                    :min="field.min"
+                    :minlength="field.minlength"
+                    :maxlength="field.maxlength"
+                    :aria-invalid="!!errors[field.name]"
+                    :aria-describedby="
+                        errors[field.name] ? `${field.id}-error` : undefined
+                    "
+                />
+                <p
+                    v-if="errors[field.name]"
+                    :id="`${field.id}-error`"
+                    class="field-error"
                 >
-                <UButton
-                    type="submit"
-                    :color="destructive ? 'error' : 'neutral'"
-                    size="lg"
-                    :loading="submitting"
-                    :disabled="submitting"
-                >
-                    {{ submitting ? '送信しています…' : label }}
-                </UButton>
+                    {{ errors[field.name][0] }}
+                </p>
             </div>
-        </form>
-    </UApp>
+        </template>
+        <div class="form-submit-row">
+            <Button v-if="cancel" as-child variant="outline"
+                ><a :href="cancel">キャンセル</a></Button
+            >
+            <Button
+                type="submit"
+                :variant="destructive ? 'destructive' : 'default'"
+                :disabled="submitting"
+                ><span
+                    v-if="submitting"
+                    class="pending-spinner"
+                    aria-hidden="true"
+                />{{ submitting ? '送信しています…' : label }}</Button
+            >
+        </div>
+    </form>
 </template>

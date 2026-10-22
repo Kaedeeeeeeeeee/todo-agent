@@ -7,6 +7,7 @@
 
 /Laravel-Tutorial-PJ/*
 !/Laravel-Tutorial-PJ/compose.yaml
+!/Laravel-Tutorial-PJ/compose.shadcn-preview.yaml
 !/Laravel-Tutorial-PJ/.env.example
 !/Laravel-Tutorial-PJ/docker/
 !/Laravel-Tutorial-PJ/src/

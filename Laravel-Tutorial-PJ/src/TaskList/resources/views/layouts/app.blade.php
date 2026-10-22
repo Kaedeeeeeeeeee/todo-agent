@@ -9,7 +9,7 @@
 </head>
 <body>
     <header class="site-header">
-        <a class="brand" href="{{ route('home') }}"><span class="brand-mark" aria-hidden="true">✓</span>TaskList<span class="brand-caption">毎日に、余白を。</span></a>
+        <a class="brand" href="{{ route('home') }}"><span class="brand-mark" aria-hidden="true">✓</span>TaskList<span class="brand-caption">shadcn-vue プレビュー</span></a>
         <nav aria-label="メインメニュー">
             @auth
                 <a href="{{ route('folders.create') }}">フォルダを作成</a>

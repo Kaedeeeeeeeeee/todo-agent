@@ -1,7 +1,8 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import vue from '@vitejs/plugin-vue';
-import ui from '@nuxt/ui/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
     plugins: [
@@ -10,16 +11,12 @@ export default defineConfig({
             refresh: true,
         }),
         vue(),
-        ui({
-            router: false,
-            colorMode: false,
-            dts: false,
-            ui: { colors: { primary: 'orange', neutral: 'stone' } },
-        }),
+        tailwindcss(),
     ],
-    server: {
-        watch: {
-            ignored: ['**/storage/framework/views/**'],
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./resources/js', import.meta.url)),
         },
     },
+    server: { watch: { ignored: ['**/storage/framework/views/**'] } },
 });

@@ -1,5 +1,4 @@
 import { createApp } from 'vue';
-import ui from '@nuxt/ui/vue-plugin';
 import TaskWorkspace from './components/TaskWorkspace.vue';
 import EnhancedForm from './components/EnhancedForm.vue';
 
@@ -12,7 +11,7 @@ if (workspace) {
     const props = JSON.parse(
         document.getElementById('task-workspace-props').textContent,
     );
-    createApp(TaskWorkspace, props).use(ui).mount(workspace);
+    createApp(TaskWorkspace, props).mount(workspace);
 }
 
 // Keep Laravel's ordinary POST, CSRF protection, and validation redirects.
@@ -59,5 +58,5 @@ for (const form of document.querySelectorAll('form[data-ui-form]')) {
     };
     const root = document.createElement('div');
     form.replaceWith(root);
-    createApp(EnhancedForm, props).use(ui).mount(root);
+    createApp(EnhancedForm, props).mount(root);
 }
