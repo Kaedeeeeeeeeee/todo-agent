@@ -120,9 +120,6 @@ function toggle(event, task) {
                     ><AppIcon name="plus" />フォルダを作成</a
                 ></Button
             >
-            <p class="sidebar-note">
-                ひとつずつ、着実に。<br />今日の小さな一歩をここに。
-            </p>
         </aside>
         <section class="workspace-main" aria-labelledby="workspace-title">
             <div class="workspace-breadcrumb">
@@ -134,7 +131,6 @@ function toggle(event, task) {
                         <AppIcon name="folder" /><span>マイタスク</span>
                     </div>
                     <h1 id="workspace-title">{{ folder.title }}</h1>
-                    <p>やることを整理して、次の一歩へ。</p>
                 </div>
                 <Button as-child class="add-task-button"
                     ><a :href="routes.createTask"
@@ -164,10 +160,6 @@ function toggle(event, task) {
                         ><CardTitle class="stat-number"
                             >{{ active }}<span> 件</span></CardTitle
                         ></CardHeader
-                    ><CardContent
-                        ><p class="stat-description">
-                            今、取り組んでいるタスク
-                        </p></CardContent
                     ></Card
                 >
                 <Card
@@ -176,19 +168,12 @@ function toggle(event, task) {
                         ><CardTitle class="stat-number"
                             >{{ overdue }}<span> 件</span></CardTitle
                         ></CardHeader
-                    ><CardContent
-                        ><p class="stat-description">
-                            期限が過ぎた未完了のタスク
-                        </p></CardContent
                     ></Card
                 >
             </div>
             <Card class="task-panel">
-                <CardHeader
-                    ><CardTitle>タスク一覧</CardTitle
-                    ><CardDescription
-                        >状態やキーワードで、必要なタスクを見つけましょう。</CardDescription
-                    ></CardHeader
+                <CardHeader class="grid-rows-1"
+                    ><CardTitle>タスク一覧</CardTitle></CardHeader
                 >
                 <CardContent>
                     <Tabs v-model="filter">
@@ -381,7 +366,7 @@ function toggle(event, task) {
                     ><span aria-live="polite"
                         >{{ visibleTasks.length }} /
                         {{ tasks.length }} 件を表示</span
-                    ><span>小さな完了を、積み重ねよう。</span></CardFooter
+                    ></CardFooter
                 >
             </Card>
             <div class="folder-settings">

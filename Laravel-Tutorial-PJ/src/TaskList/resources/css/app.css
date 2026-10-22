@@ -213,7 +213,7 @@ a:focus-visible {
 }
 .workspace-sidebar {
     border-right: 1px solid var(--border);
-    padding: 36px 24px 130px 0;
+    padding: 36px 24px 36px 0;
     position: relative;
 }
 .sidebar-heading {
@@ -242,14 +242,6 @@ a:focus-visible {
     margin-top: 24px;
     width: 100%;
     font-size: 12px;
-}
-.sidebar-note {
-    position: absolute;
-    bottom: 28px;
-    left: 8px;
-    font-size: 11px;
-    line-height: 1.9;
-    color: var(--muted-foreground);
 }
 .workspace-main {
     padding-top: 31px;
@@ -294,11 +286,6 @@ a:focus-visible {
     overflow-wrap: anywhere;
     line-height: 1.4;
 }
-.workspace-heading p {
-    font-size: 12px;
-    color: var(--muted-foreground);
-    margin-top: 8px;
-}
 .workspace-overview {
     display: grid;
     grid-template-columns: 1.2fr 1fr 1fr;
@@ -336,20 +323,11 @@ a:focus-visible {
     color: var(--muted-foreground);
     margin-bottom: 8px;
 }
-.stat-description {
-    font-size: 11px;
-    color: var(--muted-foreground);
-    margin-top: 15px;
-}
 .task-panel {
     gap: 21px;
 }
 .task-panel [data-slot='card-title'] {
     font-size: 16px;
-}
-.task-panel [data-slot='card-description'] {
-    font-size: 12px;
-    margin-top: 4px;
 }
 .task-toolbar {
     display: flex;
@@ -736,9 +714,6 @@ a:focus-visible {
     .workspace-overview [data-slot='card-content'] {
         padding-inline: 18px;
     }
-    .stat-description {
-        font-size: 10px;
-    }
 }
 @media (max-width: 850px) {
     .site-header nav > a {
@@ -761,8 +736,7 @@ a:focus-visible {
         border-right: 0;
         border-bottom: 1px solid var(--border);
     }
-    .sidebar-heading,
-    .sidebar-note {
+    .sidebar-heading {
         display: none;
     }
     .folders-navigation {
@@ -791,10 +765,6 @@ a:focus-visible {
     }
     .workspace-overview {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .stat-description {
-        line-height: 1.6;
-        margin-top: 10px;
     }
     .task-column-head,
     .task-row {
@@ -831,9 +801,6 @@ a:focus-visible {
     }
     .heading-label {
         font-size: 10px;
-    }
-    .workspace-heading p {
-        font-size: 11px;
     }
     .add-task-button {
         font-size: 11px;
@@ -873,10 +840,6 @@ a:focus-visible {
     }
     .task-panel > [data-slot='card-header'] {
         gap: 6px;
-    }
-    .task-panel > [data-slot='card-header'] [data-slot='card-description'] {
-        line-height: 1.8;
-        font-size: 11px;
     }
     .task-toolbar {
         flex-direction: column;
@@ -922,9 +885,6 @@ a:focus-visible {
     }
     .task-panel-footer {
         font-size: 10px;
-    }
-    .task-panel-footer > span:last-child {
-        display: none;
     }
     .folder-settings {
         margin-top: 17px;
