@@ -4,7 +4,7 @@
     <section class="card form-card">
         <h1>フォルダを作成する</h1>
         @include('share.errors')
-        <form method="POST" action="{{ route('folders.create') }}">
+        <form data-ui-form method="POST" action="{{ route('folders.create') }}">
             @csrf
             <div class="field">
                 <label for="title">フォルダ名</label>

@@ -4,7 +4,7 @@
     <section class="card form-card">
         <h1>{{ $folder->title }} のタスクを編集</h1>
         @include('share.errors')
-        <form method="POST" action="{{ route('tasks.edit', ['folder' => $folder, 'task' => $task]) }}">
+        <form data-ui-form method="POST" action="{{ route('tasks.edit', ['folder' => $folder, 'task' => $task]) }}">
             @csrf
             @include('tasks._fields')
             <button type="submit">更新する</button>

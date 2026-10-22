@@ -4,7 +4,7 @@
     <section class="card form-card">
         <h1>{{ $folder->title }} にタスクを追加</h1>
         @include('share.errors')
-        <form method="POST" action="{{ route('tasks.create', ['folder' => $folder]) }}">
+        <form data-ui-form method="POST" action="{{ route('tasks.create', ['folder' => $folder]) }}">
             @csrf
             @include('tasks._fields')
             <button type="submit">保存する</button>

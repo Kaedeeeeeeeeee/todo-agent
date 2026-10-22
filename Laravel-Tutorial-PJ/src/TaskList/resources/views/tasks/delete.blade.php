@@ -8,7 +8,7 @@
             <p>{{ $task->status_label }} ／ 期限 {{ $task->formatted_due_date }}</p>
         </div>
         <p>この操作は取り消せません。</p>
-        <form method="POST" action="{{ route('tasks.delete', ['folder' => $folder, 'task' => $task]) }}">
+        <form data-ui-form method="POST" action="{{ route('tasks.delete', ['folder' => $folder, 'task' => $task]) }}">
             @csrf
             <div class="actions">
                 <a class="button secondary" href="{{ route('tasks.index', ['folder' => $folder]) }}">キャンセル</a>

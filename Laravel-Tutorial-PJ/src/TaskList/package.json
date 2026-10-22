@@ -7,7 +7,9 @@
         "dev": "vite"
     },
     "devDependencies": {
+        "@iconify-json/lucide": "^1.2.147",
         "@tailwindcss/vite": "^4.0.0",
+        "@vitejs/plugin-vue": "^6.0.10",
         "concurrently": "^10.0.3",
         "laravel-vite-plugin": "^3.1",
         "tailwindcss": "^4.0.0",
@@ -15,5 +17,12 @@
     },
     "optionalDependencies": {
         "@laravel/multiplex": "^0.4.1"
+    },
+    "dependencies": {
+        "@nuxt/ui": "^4.12.0",
+        "vue": "^3.5.44"
+    },
+    "engines": {
+        "node": "^22.19.0 || >=24.0.0"
     }
 }

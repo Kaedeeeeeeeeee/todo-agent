@@ -4,15 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', 'TaskList') | TaskList</title>
-    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+    <meta name="color-scheme" content="light">
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
     <header class="site-header">
-        <a class="brand" href="{{ route('home') }}">TaskList</a>
+        <a class="brand" href="{{ route('home') }}"><span class="brand-mark" aria-hidden="true">✓</span>TaskList<span class="brand-caption">毎日に、余白を。</span></a>
         <nav aria-label="メインメニュー">
             @auth
                 <a href="{{ route('folders.create') }}">フォルダを作成</a>
-                <span>{{ auth()->user()->name }} さん</span>
+                <span class="user-name">{{ auth()->user()->name }} さん</span>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button class="secondary" type="submit">ログアウト</button>
@@ -29,5 +30,6 @@
         @endif
         @yield('content')
     </main>
+    <script id="server-errors" type="application/json">@json($errors->messages())</script>
 </body>
 </html>

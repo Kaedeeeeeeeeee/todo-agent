@@ -5,7 +5,7 @@
         <h1>パスワードを再設定</h1>
         <p>登録したメールアドレスへ再設定リンクを送信します。</p>
         @include('share.errors')
-        <form method="POST" action="{{ route('password.email') }}">
+        <form data-ui-form method="POST" action="{{ route('password.email') }}">
             @csrf
             <div class="field"><label for="email">メールアドレス</label><input id="email" name="email" type="email" value="{{ old('email') }}" autocomplete="username" required></div>
             <button type="submit">再設定リンクを送信</button>

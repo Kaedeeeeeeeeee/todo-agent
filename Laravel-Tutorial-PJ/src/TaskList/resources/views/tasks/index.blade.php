@@ -1,6 +1,27 @@
 @extends('layouts.app')
 @section('title', 'タスク一覧')
 @section('content')
+    @php
+        $workspaceProps = [
+            'folders' => $folders->map(fn ($item) => ['id' => $item->id, 'title' => $item->title, 'url' => route('tasks.index', ['folder' => $item])])->values(),
+            'folder' => ['id' => $currentFolder->id, 'title' => $currentFolder->title],
+            'tasks' => $tasks->map(fn ($task) => [
+                'id' => $task->id, 'title' => $task->title, 'status' => (int) $task->status,
+                'dueDate' => $task->due_date->format('Y-m-d'), 'dateLabel' => $task->due_date->format('Y/m/d'),
+                'editUrl' => route('tasks.edit', ['folder' => $currentFolder, 'task' => $task]),
+                'deleteUrl' => route('tasks.delete', ['folder' => $currentFolder, 'task' => $task]),
+            ])->values(),
+            'routes' => [
+                'createFolder' => route('folders.create'),
+                'createTask' => route('tasks.create', ['folder' => $currentFolder]),
+                'editFolder' => route('folders.edit', ['folder' => $currentFolder]),
+                'deleteFolder' => route('folders.delete', ['folder' => $currentFolder]),
+            ],
+            'csrf' => csrf_token(), 'today' => today()->format('Y-m-d'),
+        ];
+    @endphp
+    <script id="task-workspace-props" type="application/json">@json($workspaceProps)</script>
+    <div data-task-workspace>
     <div class="workspace">
         <aside class="card">
             <h2>フォルダ一覧</h2>
@@ -41,5 +62,6 @@
                 </table>
             </div>
         </section>
+    </div>
     </div>
 @endsection

@@ -4,7 +4,7 @@
     <section class="card form-card">
         <h1>フォルダ名を編集する</h1>
         @include('share.errors')
-        <form method="POST" action="{{ route('folders.edit', ['folder' => $folder]) }}">
+        <form data-ui-form method="POST" action="{{ route('folders.edit', ['folder' => $folder]) }}">
             @csrf
             <div class="field">
                 <label for="title">フォルダ名</label>
