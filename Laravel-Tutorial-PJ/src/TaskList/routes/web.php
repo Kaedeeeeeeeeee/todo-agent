@@ -6,6 +6,8 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
+use Nuwave\Lighthouse\Http\GraphQLController;
+use Nuwave\Lighthouse\Http\Middleware\AcceptJson;
 
 Route::middleware('guest')->group(function () {
     Route::get('/register', [AuthController::class, 'showRegisterForm'])->name('register');
@@ -19,6 +21,9 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth', 'auth.session'])->group(function () {
+    Route::post('/graphql', GraphQLController::class)
+        ->middleware(AcceptJson::class)
+        ->name('graphql');
     Route::get('/', [HomeController::class, 'index'])->name('home');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('/folders/create', [FolderController::class, 'showCreateForm'])->name('folders.create');

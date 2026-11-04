@@ -12,6 +12,8 @@
                 'deleteUrl' => route('tasks.delete', ['folder' => $currentFolder, 'task' => $task]),
             ])->values(),
             'routes' => [
+                'graphql' => route('graphql'),
+                'login' => route('login'),
                 'createFolder' => route('folders.create'),
                 'createTask' => route('tasks.create', ['folder' => $currentFolder]),
                 'editFolder' => route('folders.edit', ['folder' => $currentFolder]),

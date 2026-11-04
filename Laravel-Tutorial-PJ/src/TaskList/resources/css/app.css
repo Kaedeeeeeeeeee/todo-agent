@@ -898,3 +898,50 @@ a:focus-visible {
         scroll-behavior: auto !important;
     }
 }
+
+.workspace-message {
+    margin: 0 0 18px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+}
+.workspace-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border: 1px solid var(--destructive);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: var(--destructive);
+    font-size: 13px;
+}
+.workspace-error a { text-decoration: underline; }
+.quick-task-card { margin-bottom: 26px; }
+.quick-task-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 20px;
+}
+.quick-task-form label { font-size: 12px; }
+.quick-task-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+.task-status-select {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px;
+    background: var(--background);
+    font-size: 11px;
+}
+.task-status-select:disabled { opacity: 0.6; }
+.task-title-cell > .complete-toggle { flex: 0 0 auto; }
+@media (max-width: 600px) {
+    .quick-task-form { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}

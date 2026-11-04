@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AppIcon from './AppIcon.vue';
+import { graphql, taskFields } from '../graphql';
 
 const props = defineProps({
     folders: Array,
@@ -23,39 +24,159 @@ const props = defineProps({
     csrf: String,
     today: String,
 });
+const tasks = ref(props.tasks);
 const search = ref('');
+const loading = ref(true);
+const loadError = ref('');
+const operationError = ref('');
+const loginRequired = ref(false);
+const needsRefresh = ref(false);
+const notice = ref('');
+const creating = ref(false);
+const createOpen = ref(false);
+const draft = ref({ title: '', due_date: props.today });
+const fieldErrors = ref({});
+const busy = computed(() => loading.value || creating.value || pendingId.value !== null || needsRefresh.value || !!loadError.value || loginRequired.value);
+const statusValues = { 1: 'TODO', 2: 'DOING', 3: 'DONE' };
+const statusNumbers = { TODO: 1, DOING: 2, DONE: 3 };
+const request = (query, variables, name) => graphql(props.routes.graphql, props.csrf, query, variables, name);
+function mapTask(task) {
+    return {
+        id: Number(task.id), title: task.title, status: statusNumbers[task.status],
+        dueDate: task.due_date, dateLabel: task.due_date.replaceAll('-', '/'),
+        editUrl: task.edit_url, deleteUrl: task.delete_url,
+    };
+}
+function showError(error) {
+    operationError.value = error.message;
+    loginRequired.value = !!error.loginRequired;
+    needsRefresh.value = !!error.uncertain;
+}
+async function loadTasks() {
+    if (creating.value || pendingId.value !== null) return;
+    loading.value = true;
+    loadError.value = '';
+    try {
+        let page = 1;
+        let more = true;
+        const rows = [];
+        while (more) {
+            const data = await request(`query TaskList($folder_id: ID!, $page: Int!) {
+                tasks(folder_id: $folder_id, page: $page, first: 50) {
+                    data { ${taskFields} }
+                    paginatorInfo { hasMorePages }
+                }
+            }`, { folder_id: String(props.folder.id), page }, 'TaskList');
+            rows.push(...data.tasks.data.map(mapTask));
+            more = data.tasks.paginatorInfo.hasMorePages;
+            page++;
+        }
+        tasks.value = rows;
+        if (needsRefresh.value) {
+            createOpen.value = false;
+            notice.value = '最新の一覧を取得しました。保存結果を確認してください。';
+        }
+        needsRefresh.value = false;
+        loginRequired.value = false;
+        operationError.value = '';
+    } catch (error) {
+        loadError.value = error.message;
+        loginRequired.value = !!error.loginRequired;
+    } finally {
+        loading.value = false;
+    }
+}
+async function openCreate() {
+    createOpen.value = true;
+    notice.value = '';
+    await nextTick();
+    document.getElementById('quick-task-title')?.focus();
+}
+async function createTask() {
+    if (busy.value) return;
+    creating.value = true;
+    fieldErrors.value = {};
+    operationError.value = '';
+    notice.value = '';
+    try {
+        const data = await request(`mutation CreateTask($folder_id: ID!, $input: CreateTaskInput!) {
+            createTask(folder_id: $folder_id, input: $input) { ${taskFields} }
+        }`, { folder_id: String(props.folder.id), input: { ...draft.value } }, 'CreateTask');
+        if (!data.createTask) throw Object.assign(new Error('保存結果を確認できません。一覧を再取得してください。'), { uncertain: true });
+        tasks.value.push(mapTask(data.createTask));
+        resetFilters();
+        draft.value = { title: '', due_date: props.today };
+        createOpen.value = false;
+        notice.value = 'タスクを追加しました。';
+        await nextTick();
+        document.querySelector('.add-task-button')?.focus();
+    } catch (error) {
+        fieldErrors.value = error.validation || {};
+        showError(error);
+    } finally {
+        creating.value = false;
+    }
+}
+async function updateStatus(task, status) {
+    if (busy.value || task.status === status) return;
+    pendingId.value = task.id;
+    operationError.value = '';
+    notice.value = '';
+    try {
+        const data = await request(`mutation UpdateTaskStatus($folder_id: ID!, $id: ID!, $status: TaskStatus!) {
+            updateTaskStatus(folder_id: $folder_id, id: $id, status: $status) { ${taskFields} }
+        }`, { folder_id: String(props.folder.id), id: String(task.id), status: statusValues[status] }, 'UpdateTaskStatus');
+        if (!data.updateTaskStatus) throw Object.assign(new Error('保存結果を確認できません。一覧を再取得してください。'), { uncertain: true });
+        tasks.value = tasks.value.map((row) => row.id === task.id ? mapTask(data.updateTaskStatus) : row);
+        notice.value = 'タスクの状態を更新しました。';
+    } catch (error) {
+        showError(error);
+    } finally {
+        pendingId.value = null;
+    }
+}
+async function changeStatus(event, task) {
+    const status = Number(event.target.value);
+    event.target.value = String(task.status);
+    await updateStatus(task, status);
+}
+
 const filter = ref('all');
 const pendingId = ref(null);
 const folderNavigation = ref(null);
-const resetPending = () => {
+const restorePage = (event) => {
+    if (!event.persisted) return;
     pendingId.value = null;
+    creating.value = false;
+    loadTasks();
 };
 onMounted(() => {
-    window.addEventListener('pageshow', resetPending);
+    window.addEventListener('pageshow', restorePage);
+    loadTasks();
     folderNavigation.value
         ?.querySelector('[aria-current="page"]')
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 });
-onBeforeUnmount(() => window.removeEventListener('pageshow', resetPending));
+onBeforeUnmount(() => window.removeEventListener('pageshow', restorePage));
 const statuses = {
     1: { label: '未着手', variant: 'outline' },
     2: { label: '着手中', variant: 'default' },
     3: { label: '完了', variant: 'secondary' },
 };
 const complete = computed(
-    () => props.tasks.filter((task) => task.status === 3).length,
+    () => tasks.value.filter((task) => task.status === 3).length,
 );
 const active = computed(
-    () => props.tasks.filter((task) => task.status === 2).length,
+    () => tasks.value.filter((task) => task.status === 2).length,
 );
 const overdue = computed(
     () =>
-        props.tasks.filter(
+        tasks.value.filter(
             (task) => task.status !== 3 && task.dueDate < props.today,
         ).length,
 );
 const visibleTasks = computed(() =>
-    props.tasks.filter((task) => {
+    tasks.value.filter((task) => {
         const matchesSearch = task.title
             .toLocaleLowerCase()
             .includes(search.value.trim().toLocaleLowerCase());
@@ -66,16 +187,16 @@ const visibleTasks = computed(() =>
     }),
 );
 const completion = computed(() =>
-    props.tasks.length
-        ? Math.round((complete.value / props.tasks.length) * 100)
+    tasks.value.length
+        ? Math.round((complete.value / tasks.value.length) * 100)
         : 0,
 );
 const filters = computed(() => [
-    { value: 'all', label: 'すべて', count: props.tasks.length },
+    { value: 'all', label: 'すべて', count: tasks.value.length },
     {
         value: 'open',
         label: '未完了',
-        count: props.tasks.length - complete.value,
+        count: tasks.value.length - complete.value,
     },
     { value: 'done', label: '完了', count: complete.value },
 ]);
@@ -83,9 +204,8 @@ function resetFilters() {
     search.value = '';
     filter.value = 'all';
 }
-function toggle(event, task) {
-    if (pendingId.value !== null) event.preventDefault();
-    else pendingId.value = task.id;
+function toggle(task) {
+    return updateStatus(task, task.status === 3 ? 1 : 3);
 }
 </script>
 
@@ -126,12 +246,38 @@ function toggle(event, task) {
                 <div>
                     <h1 id="workspace-title">{{ folder.title }}</h1>
                 </div>
-                <Button as-child class="add-task-button"
-                    ><a :href="routes.createTask"
-                        ><AppIcon name="plus" />タスクを追加</a
-                    ></Button
+                <Button type="button" class="add-task-button" :disabled="busy" :aria-expanded="createOpen" aria-controls="quick-task-form" @click="openCreate"
+                    ><AppIcon name="plus" />タスクを追加</Button
                 >
             </header>
+            <p v-if="loading" class="workspace-message" role="status">タスクを読み込み中…</p>
+            <div v-if="loadError || operationError" class="workspace-error" role="alert">
+                <p>{{ loadError || operationError }}</p>
+                <a v-if="loginRequired" :href="routes.login">ログインする</a>
+                <Button v-else-if="loadError || needsRefresh" type="button" variant="outline" size="sm" :disabled="loading || creating || pendingId !== null" @click="loadTasks">一覧を再取得</Button>
+            </div>
+            <p v-if="notice" class="workspace-message" role="status">{{ notice }}</p>
+            <Card v-if="createOpen" class="quick-task-card">
+                <CardHeader><CardTitle>タスクを追加</CardTitle></CardHeader>
+                <CardContent>
+                    <form id="quick-task-form" class="quick-task-form" novalidate @submit.prevent="createTask" :aria-busy="creating">
+                        <div class="enhanced-field">
+                            <label for="quick-task-title">タスク名 <span class="required-mark">*</span></label>
+                            <Input id="quick-task-title" name="title" v-model="draft.title" required maxlength="100" :disabled="creating" :aria-invalid="!!fieldErrors.title" :aria-describedby="fieldErrors.title ? 'quick-title-error' : undefined" />
+                            <p v-if="fieldErrors.title" id="quick-title-error" class="field-error">{{ fieldErrors.title[0] }}</p>
+                        </div>
+                        <div class="enhanced-field">
+                            <label for="quick-task-due-date">期限 <span class="required-mark">*</span></label>
+                            <Input id="quick-task-due-date" name="due_date" type="date" v-model="draft.due_date" required :min="today" :disabled="creating" :aria-invalid="!!fieldErrors.due_date" :aria-describedby="fieldErrors.due_date ? 'quick-date-error' : undefined" />
+                            <p v-if="fieldErrors.due_date" id="quick-date-error" class="field-error">{{ fieldErrors.due_date[0] }}</p>
+                        </div>
+                        <div class="quick-task-actions">
+                            <Button type="button" variant="outline" :disabled="creating" @click="createOpen = false">キャンセル</Button>
+                            <Button type="submit" :disabled="busy"><span v-if="creating" class="pending-spinner" aria-hidden="true" />{{ creating ? '保存中…' : '保存する' }}</Button>
+                        </div>
+                    </form>
+                </CardContent>
+            </Card>
             <div class="workspace-overview" aria-label="タスクの進捗">
                 <Card
                     ><CardHeader
@@ -211,56 +357,16 @@ function toggle(event, task) {
                                     ]"
                                 >
                                     <div class="task-title-cell">
-                                        <form
-                                            :action="task.editUrl"
-                                            method="POST"
-                                            @submit="toggle($event, task)"
-                                        >
-                                            <input
-                                                type="hidden"
-                                                name="_token"
-                                                :value="csrf"
-                                            /><input
-                                                type="hidden"
-                                                name="title"
-                                                :value="task.title"
-                                            /><input
-                                                type="hidden"
-                                                name="due_date"
-                                                :value="task.dueDate"
-                                            /><input
-                                                type="hidden"
-                                                name="status"
-                                                :value="
-                                                    task.status === 3 ? 1 : 3
-                                                "
-                                            />
-                                            <Button
-                                                type="submit"
-                                                :aria-label="`${task.title}を${task.status === 3 ? '未着手に戻す' : '完了にする'}`"
-                                                :aria-pressed="
-                                                    task.status === 3
-                                                "
-                                                :variant="
-                                                    task.status === 3
-                                                        ? 'default'
-                                                        : 'outline'
-                                                "
-                                                size="icon-sm"
-                                                class="complete-toggle"
-                                                :disabled="pendingId !== null"
-                                                ><span
-                                                    v-if="pendingId === task.id"
-                                                    class="pending-spinner"
-                                                    aria-hidden="true" /><AppIcon
-                                                    v-else-if="
-                                                        task.status === 3
-                                                    "
-                                                    name="check" /><span
-                                                    v-else
-                                                    class="empty-check"
-                                            /></Button>
-                                        </form>
+                                        <Button
+                                            type="button"
+                                            @click="toggle(task)"
+                                            :aria-label="`${task.title}を${task.status === 3 ? '未着手に戻す' : '完了にする'}`"
+                                            :aria-pressed="task.status === 3"
+                                            :variant="task.status === 3 ? 'default' : 'outline'"
+                                            size="icon-sm"
+                                            class="complete-toggle"
+                                            :disabled="busy"
+                                        ><span v-if="pendingId === task.id" class="pending-spinner" aria-hidden="true" /><AppIcon v-else-if="task.status === 3" name="check" /><span v-else class="empty-check" /></Button>
                                         <a
                                             :href="task.editUrl"
                                             class="task-name"
@@ -268,16 +374,9 @@ function toggle(event, task) {
                                         >
                                     </div>
                                     <div class="task-status-cell">
-                                        <Badge
-                                            :variant="
-                                                statuses[task.status]
-                                                    ?.variant || 'outline'
-                                            "
-                                            >{{
-                                                statuses[task.status]?.label ||
-                                                '不明'
-                                            }}</Badge
-                                        >
+                                        <select class="task-status-select" :value="task.status" :aria-label="`${task.title}の状態`" :disabled="busy" @change="changeStatus($event, task)">
+                                            <option v-for="(item, value) in statuses" :key="value" :value="value">{{ item.label }}</option>
+                                        </select>
                                     </div>
                                     <div
                                         :class="[
@@ -323,7 +422,7 @@ function toggle(event, task) {
                                     </div>
                                 </li>
                             </ul>
-                            <div v-else class="task-empty" role="status">
+                            <div v-else-if="!loading && !loadError" class="task-empty" role="status">
                                 <div class="empty-symbol">
                                     <AppIcon name="inbox" />
                                 </div>
@@ -340,10 +439,8 @@ function toggle(event, task) {
                                     variant="outline"
                                     @click="resetFilters"
                                     >絞り込みをリセット</Button
-                                ><Button v-else as-child
-                                    ><a :href="routes.createTask"
-                                        ><AppIcon name="plus" />タスクを追加</a
-                                    ></Button
+                                ><Button v-else type="button" :disabled="busy" @click="openCreate"
+                                    ><AppIcon name="plus" />タスクを追加</Button
                                 >
                             </div>
                         </TabsContent>

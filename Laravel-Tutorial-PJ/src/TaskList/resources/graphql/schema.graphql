@@ -1,0 +1,74 @@
+scalar Date @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\Date")
+
+enum TaskStatus {
+    TODO @enum(value: 1)
+    DOING @enum(value: 2)
+    DONE @enum(value: 3)
+}
+
+type User {
+    id: ID!
+    name: String!
+    email: String!
+}
+
+type Folder {
+    id: ID!
+    title: String!
+}
+
+type Task {
+    id: ID!
+    folder_id: ID!
+    title: String!
+    status: TaskStatus!
+    due_date: Date!
+    edit_url: String!
+    delete_url: String!
+}
+
+type PaginatorInfo {
+    currentPage: Int!
+    lastPage: Int!
+    hasMorePages: Boolean!
+}
+
+type TaskPage {
+    data: [Task!]!
+    paginatorInfo: PaginatorInfo!
+}
+
+type FolderPage {
+    data: [Folder!]!
+    paginatorInfo: PaginatorInfo!
+}
+
+input CreateTaskInput {
+    title: String!
+    due_date: String!
+}
+
+input UpdateTaskInput {
+    title: String!
+    status: TaskStatus!
+    due_date: String!
+}
+
+type Query {
+    me: User! @field(resolver: "App\\GraphQL\\TaskOperations@me")
+    folders(page: Int = 1, first: Int = 20): FolderPage!
+        @field(resolver: "App\\GraphQL\\TaskOperations@folders")
+    tasks(folder_id: ID!, status: TaskStatus, page: Int = 1, first: Int = 20): TaskPage!
+        @field(resolver: "App\\GraphQL\\TaskOperations@tasks")
+    task(folder_id: ID!, id: ID!): Task
+        @field(resolver: "App\\GraphQL\\TaskOperations@task")
+}
+
+type Mutation {
+    createTask(folder_id: ID!, input: CreateTaskInput!): Task
+        @field(resolver: "App\\GraphQL\\TaskOperations@createTask")
+    updateTask(folder_id: ID!, id: ID!, input: UpdateTaskInput!): Task
+        @field(resolver: "App\\GraphQL\\TaskOperations@updateTask")
+    updateTaskStatus(folder_id: ID!, id: ID!, status: TaskStatus!): Task
+        @field(resolver: "App\\GraphQL\\TaskOperations@updateTaskStatus")
+}
