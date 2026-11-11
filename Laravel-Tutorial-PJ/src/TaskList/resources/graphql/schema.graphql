@@ -15,6 +15,7 @@ type User {
 type Folder {
     id: ID!
     title: String!
+    tasks_url: String!
 }
 
 type Task {
@@ -38,9 +39,18 @@ type TaskPage {
     paginatorInfo: PaginatorInfo!
 }
 
+type DeleteResult {
+    id: ID!
+    deleted: Boolean!
+}
+
 type FolderPage {
     data: [Folder!]!
     paginatorInfo: PaginatorInfo!
+}
+
+input CreateFolderInput {
+    title: String!
 }
 
 input CreateTaskInput {
@@ -54,7 +64,53 @@ input UpdateTaskInput {
     due_date: String!
 }
 
+enum GmailScope { GITHUB BIZMATES }
+
+type TaskExtraction {
+    id: ID!
+    scope: GmailScope!
+    status: String!
+    read_count: Int!
+    candidate_count: Int!
+    duplicate_count: Int!
+    error: String
+}
+
+type TaskCandidate {
+    id: ID!
+    message_id: String!
+    subject: String!
+    sender: String!
+    received_at: String!
+    title: String!
+    description: String!
+    reason: String!
+    evidence: String!
+    due_date: Date
+    status: String!
+    task_id: ID
+}
+
+type CandidateInbox {
+    enabled: Boolean!
+    account: String
+    run: TaskExtraction
+    candidates: [TaskCandidate!]!
+}
+
+type GmailConnectionState {
+    can_manage: Boolean!
+    status: String!
+    account: String
+    verified_at: String
+    error: String
+    service_status: String!
+    retry_after: Int!
+}
+
 type Query {
+    gmailConnection: GmailConnectionState! @field(resolver: "App\\GraphQL\\GmailConnectionOperations@state")
+    candidateInbox: CandidateInbox! @field(resolver: "App\\GraphQL\\TaskCandidateOperations@inbox")
     me: User! @field(resolver: "App\\GraphQL\\TaskOperations@me")
     folders(page: Int = 1, first: Int = 20): FolderPage!
         @field(resolver: "App\\GraphQL\\TaskOperations@folders")
@@ -65,6 +121,14 @@ type Query {
 }
 
 type Mutation {
+    createFolder(input: CreateFolderInput!): Folder @field(resolver: "App\\GraphQL\\TaskOperations@createFolder")
+    connectGmail: GmailConnectionState @field(resolver: "App\\GraphQL\\GmailConnectionOperations@connect")
+    disconnectGmail(confirm: Boolean!): GmailConnectionState @field(resolver: "App\\GraphQL\\GmailConnectionOperations@disconnect")
+    extractGmailTasks(scope: GmailScope!): TaskExtraction @field(resolver: "App\\GraphQL\\TaskCandidateOperations@start")
+    acceptTaskCandidate(id: ID!, folder_id: ID!, input: CreateTaskInput!): Task @field(resolver: "App\\GraphQL\\TaskCandidateOperations@accept")
+    dismissTaskCandidate(id: ID!): TaskCandidate @field(resolver: "App\\GraphQL\\TaskCandidateOperations@dismiss")
+    deleteTask(folder_id: ID!, id: ID!, confirm: Boolean!): DeleteResult
+        @field(resolver: "App\\GraphQL\\TaskOperations@deleteTask")
     createTask(folder_id: ID!, input: CreateTaskInput!): Task
         @field(resolver: "App\\GraphQL\\TaskOperations@createTask")
     updateTask(folder_id: ID!, id: ID!, input: UpdateTaskInput!): Task

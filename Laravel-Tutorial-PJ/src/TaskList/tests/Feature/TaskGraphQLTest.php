@@ -14,12 +14,15 @@ class TaskGraphQLTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const DELETE = 'mutation Delete($folder: ID!, $id: ID!, $confirm: Boolean!) { deleteTask(folder_id: $folder, id: $id, confirm: $confirm) { id deleted } }';
+
     private const CREATE = 'mutation Create($folder: ID!, $input: CreateTaskInput!) { createTask(folder_id: $folder, input: $input) { id folder_id title status due_date edit_url delete_url } }';
 
     private const STATUS = 'mutation Status($folder: ID!, $id: ID!, $status: TaskStatus!) { updateTaskStatus(folder_id: $folder, id: $id, status: $status) { id title status due_date } }';
 
     private const UPDATE = 'mutation Update($folder: ID!, $id: ID!, $input: UpdateTaskInput!) { updateTask(folder_id: $folder, id: $id, input: $input) { id title status due_date } }';
 
+    #[TestWith(['mutation { deleteTask(folder_id: "1", id: "1", confirm: true) { id } }'])]
     #[TestWith(['query { me { id } }'])]
     #[TestWith(['mutation { createTask(folder_id: "1", input: {title: "test", due_date: "2026-11-06"}) { id } }'])]
     public function test_returns_401_for_unauthenticated_graphql_requests(string $query): void
@@ -182,6 +185,7 @@ class TaskGraphQLTest extends TestCase
         $this->actingAs($other);
         $variables = ['folder' => (string) $task->folder_id, 'id' => (string) $task->id];
         $queries = [
+            [self::DELETE, $variables + ['confirm' => true]],
             ['query($folder: ID!) { tasks(folder_id: $folder) { data { id title } } }', ['folder' => $variables['folder']]],
             ['query($folder: ID!, $id: ID!) { task(folder_id: $folder, id: $id) { id title } }', $variables],
             [self::CREATE, ['folder' => $variables['folder'], 'input' => ['title' => 'forbidden', 'due_date' => today()->toDateString()]]],
@@ -222,6 +226,78 @@ class TaskGraphQLTest extends TestCase
             'variables' => ['folder' => (string) $folder->id, 'input' => ['title' => 'forged', 'due_date' => today()->toDateString()]],
         ])->assertStatus(419);
         $this->assertDatabaseCount('tasks', 0);
+    }
+
+    public function test_confirmed_deletion_removes_only_the_selected_task(): void
+    {
+        $task = Task::factory()->create();
+        $sibling = Task::factory()->for($task->folder)->create();
+
+        $this->actingAs($task->folder->user)->postJson('/graphql', [
+            'query' => self::DELETE,
+            'variables' => ['folder' => (string) $task->folder_id, 'id' => (string) $task->id, 'confirm' => true],
+        ])->assertOk()->assertJsonMissingPath('errors')
+            ->assertJsonPath('data.deleteTask', ['id' => (string) $task->id, 'deleted' => true]);
+
+        $this->assertModelMissing($task);
+        $this->assertModelExists($sibling);
+        $this->assertModelExists($task->folder);
+        $this->assertDatabaseCount('tasks', 1);
+    }
+
+    public function test_unconfirmed_deletion_returns_validation_error_and_keeps_the_task(): void
+    {
+        $task = Task::factory()->create();
+
+        $this->actingAs($task->folder->user)->postJson('/graphql', [
+            'query' => self::DELETE,
+            'variables' => ['folder' => (string) $task->folder_id, 'id' => (string) $task->id, 'confirm' => false],
+        ])->assertOk()->assertJsonPath('data.deleteTask', null)
+            ->assertJsonPath('errors.0.extensions.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('errors.0.extensions.validation.confirm.0', '削除を確認してください。');
+
+        $this->assertModelExists($task);
+    }
+
+    public function test_deletion_rejects_a_task_from_a_different_owned_folder(): void
+    {
+        $task = Task::factory()->create();
+        $folder = Folder::factory()->for($task->folder->user)->create();
+
+        $this->actingAs($folder->user)->postJson('/graphql', [
+            'query' => self::DELETE,
+            'variables' => ['folder' => (string) $folder->id, 'id' => (string) $task->id, 'confirm' => true],
+        ])->assertOk()->assertJsonPath('data.deleteTask', null)
+            ->assertJsonPath('errors.0.extensions.code', 'NOT_FOUND');
+
+        $this->assertModelExists($task);
+    }
+
+    public function test_missing_task_deletion_returns_not_found_without_deleting_another_task(): void
+    {
+        $task = Task::factory()->create();
+
+        $this->actingAs($task->folder->user)->postJson('/graphql', [
+            'query' => self::DELETE,
+            'variables' => ['folder' => (string) $task->folder_id, 'id' => '999999', 'confirm' => true],
+        ])->assertOk()->assertJsonPath('data.deleteTask', null)
+            ->assertJsonPath('errors.0.extensions.code', 'NOT_FOUND');
+
+        $this->assertModelExists($task);
+    }
+
+    public function test_cross_site_deletion_without_csrf_returns_419_and_keeps_the_task(): void
+    {
+        $task = Task::factory()->create();
+        $this->app->instance('env', 'local');
+
+        $this->actingAs($task->folder->user)->withHeader('Sec-Fetch-Site', 'cross-site')
+            ->postJson('/graphql', [
+                'query' => self::DELETE,
+                'variables' => ['folder' => (string) $task->folder_id, 'id' => (string) $task->id, 'confirm' => true],
+            ])->assertStatus(419);
+
+        $this->assertModelExists($task);
     }
 
     public function test_graphql_get_requests_cannot_execute_mutations(): void

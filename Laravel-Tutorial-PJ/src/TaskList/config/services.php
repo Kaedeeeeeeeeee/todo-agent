@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'task_agent' => [
+        'url' => env('TASK_AGENT_URL', 'http://host.docker.internal:4195'),
+        'token' => env('TASK_AGENT_TOKEN'),
+        'owner_id' => env('TASK_AGENT_OWNER_ID'),
+        'account' => env('TASK_AGENT_ACCOUNT'),
+    ],
+
 ];

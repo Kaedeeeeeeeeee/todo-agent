@@ -2,6 +2,7 @@
 
 namespace App\GraphQL;
 
+use App\Http\Requests\CreateFolder;
 use App\Http\Requests\CreateTask;
 use App\Http\Requests\EditTask;
 use App\Models\Folder;
@@ -26,7 +27,24 @@ class TaskOperations
         $page = $context->user()->folders()->orderBy('id')
             ->paginate($args['first'], ['id', 'title'], 'page', $args['page']);
 
-        return $this->page($page, $page->items());
+        return $this->page($page, array_map($this->serializeFolder(...), $page->items()));
+    }
+
+    public function createFolder(mixed $root, array $args, GraphQLContext $context): array
+    {
+        $request = new CreateFolder;
+        $input = $this->validate(['title' => trim($args['input']['title'])], $request->rules(), $request->messages());
+        $folder = new Folder;
+        $folder->title = $input['title'];
+        $context->user()->folders()->save($folder);
+
+        return $this->serializeFolder($folder);
+    }
+
+    /** @return array{id: int, title: string, tasks_url: string} */
+    private function serializeFolder(Folder $folder): array
+    {
+        return ['id' => $folder->id, 'title' => $folder->title, 'tasks_url' => route('tasks.index', ['folder' => $folder])];
     }
 
     public function tasks(mixed $root, array $args, GraphQLContext $context): array
@@ -78,6 +96,17 @@ class TaskOperations
         return $this->serializeTask($task);
     }
 
+    /** @return array{id: int, deleted: bool} */
+    public function deleteTask(mixed $root, array $args, GraphQLContext $context): array
+    {
+        $task = $this->ownedTask($context, $args);
+        $this->validate($args, ['confirm' => ['accepted']], ['confirm.accepted' => '削除を確認してください。']);
+        $id = $task->id;
+        $task->delete();
+
+        return ['id' => $id, 'deleted' => true];
+    }
+
     private function ownedFolder(GraphQLContext $context, string $id): Folder
     {
         $folder = $context->user()->folders()->find($id);
@@ -127,7 +156,7 @@ class TaskOperations
     }
 
     /** @return array{id: int, folder_id: int, title: string, status: int, due_date: string, edit_url: string, delete_url: string} */
-    private function serializeTask(Task $task): array
+    public function serializeTask(Task $task): array
     {
         return [
             'id' => $task->id,

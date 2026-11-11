@@ -12,7 +12,6 @@
         <a class="brand" href="{{ route('home') }}">TaskList</a>
         <nav aria-label="メインメニュー">
             @auth
-                <a href="{{ route('folders.create') }}">フォルダを作成</a>
                 <span class="user-name">{{ auth()->user()->name }} さん</span>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
@@ -30,6 +29,10 @@
         @endif
         @yield('content')
     </main>
+    @auth
+        <script id="folder-create-props" type="application/json">@json(['endpoint' => route('graphql'), 'csrf' => csrf_token(), 'loginUrl' => route('login')])</script>
+        <div data-folder-create-dialog></div>
+    @endauth
     <script id="server-errors" type="application/json">@json($errors->messages())</script>
 </body>
 </html>

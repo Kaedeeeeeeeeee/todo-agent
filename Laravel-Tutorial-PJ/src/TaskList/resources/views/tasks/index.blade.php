@@ -34,7 +34,7 @@
                     </li>
                 @endforeach
             </ul>
-            <p><a href="{{ route('folders.create') }}">＋ フォルダを作成</a></p>
+            <p><a data-create-folder href="{{ route('folders.create') }}">＋ フォルダを作成</a></p>
         </aside>
         <section class="card">
             <h1>{{ $currentFolder->title }} のタスク</h1>

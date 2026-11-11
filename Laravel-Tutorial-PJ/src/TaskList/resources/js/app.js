@@ -1,6 +1,8 @@
 import { createApp } from 'vue';
 import TaskWorkspace from './components/TaskWorkspace.vue';
 import EnhancedForm from './components/EnhancedForm.vue';
+import FolderCreateDialog from './components/FolderCreateDialog.vue';
+import FolderStarter from './components/FolderStarter.vue';
 
 const errors = JSON.parse(
     document.getElementById('server-errors')?.textContent || '{}',
@@ -12,6 +14,15 @@ if (workspace) {
         document.getElementById('task-workspace-props').textContent,
     );
     createApp(TaskWorkspace, props).mount(workspace);
+}
+
+const folderDialog = document.querySelector('[data-folder-create-dialog]');
+if (folderDialog) {
+    createApp(FolderCreateDialog, JSON.parse(document.getElementById('folder-create-props').textContent)).mount(folderDialog);
+}
+const folderStarter = document.querySelector('[data-folder-starter]');
+if (folderStarter) {
+    createApp(FolderStarter, { createUrl: folderStarter.dataset.createUrl }).mount(folderStarter);
 }
 
 // Keep Laravel's ordinary POST, CSRF protection, and validation redirects.

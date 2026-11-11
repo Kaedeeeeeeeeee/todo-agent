@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AppIcon from './AppIcon.vue';
+import TaskDeleteDialog from './TaskDeleteDialog.vue';
+import TaskCandidates from './TaskCandidates.vue';
 import { graphql, taskFields } from '../graphql';
 
 const props = defineProps({
@@ -25,6 +27,7 @@ const props = defineProps({
     today: String,
 });
 const tasks = ref(props.tasks);
+const folderList = ref([...props.folders]);
 const search = ref('');
 const loading = ref(true);
 const loadError = ref('');
@@ -34,6 +37,11 @@ const needsRefresh = ref(false);
 const notice = ref('');
 const creating = ref(false);
 const createOpen = ref(false);
+const editingId = ref(null);
+const deleteTarget = ref(null);
+const deleteError = ref('');
+let formOpener = null;
+let deleteOpener = null;
 const draft = ref({ title: '', due_date: props.today });
 const fieldErrors = ref({});
 const busy = computed(() => loading.value || creating.value || pendingId.value !== null || needsRefresh.value || !!loadError.value || loginRequired.value);
@@ -50,7 +58,7 @@ function mapTask(task) {
 function showError(error) {
     operationError.value = error.message;
     loginRequired.value = !!error.loginRequired;
-    needsRefresh.value = !!error.uncertain;
+    needsRefresh.value = !!error.uncertain || error.code === 'NOT_FOUND';
 }
 async function loadTasks() {
     if (creating.value || pendingId.value !== null) return;
@@ -74,6 +82,7 @@ async function loadTasks() {
         tasks.value = rows;
         if (needsRefresh.value) {
             createOpen.value = false;
+            editingId.value = null;
             notice.value = '最新の一覧を取得しました。保存結果を確認してください。';
         }
         needsRefresh.value = false;
@@ -86,11 +95,110 @@ async function loadTasks() {
         loading.value = false;
     }
 }
-async function openCreate() {
+async function openCreate(event) {
+    if (busy.value || createOpen.value) return;
+    formOpener = event?.currentTarget;
+    editingId.value = null;
+    draft.value = { title: '', due_date: props.today };
+    fieldErrors.value = {};
+    operationError.value = '';
     createOpen.value = true;
     notice.value = '';
     await nextTick();
     document.getElementById('quick-task-title')?.focus();
+}
+async function openEdit(task, event) {
+    if (busy.value || createOpen.value) return;
+    formOpener = event?.currentTarget;
+    editingId.value = task.id;
+    draft.value = { title: task.title, due_date: task.dueDate };
+    fieldErrors.value = {};
+    operationError.value = '';
+    notice.value = '';
+    createOpen.value = true;
+    await nextTick();
+    document.getElementById('quick-task-title')?.focus();
+}
+async function closeForm() {
+    if (creating.value) return;
+    createOpen.value = false;
+    editingId.value = null;
+    fieldErrors.value = {};
+    if (!needsRefresh.value && !loginRequired.value) operationError.value = '';
+    await nextTick();
+    formOpener?.focus();
+}
+async function saveTask() {
+    if (editingId.value === null) return createTask();
+    if (busy.value) return;
+    const current = tasks.value.find((task) => task.id === editingId.value);
+    if (!current) return;
+    creating.value = true;
+    fieldErrors.value = {};
+    operationError.value = '';
+    notice.value = '';
+    try {
+        const data = await request(`mutation UpdateTask($folder_id: ID!, $id: ID!, $input: UpdateTaskInput!) {
+            updateTask(folder_id: $folder_id, id: $id, input: $input) { ${taskFields} }
+        }`, { folder_id: String(props.folder.id), id: String(current.id), input: { ...draft.value, status: statusValues[current.status] } }, 'UpdateTask');
+        if (!data.updateTask) throw Object.assign(new Error('保存結果を確認できません。一覧を再取得してください。'), { uncertain: true });
+        tasks.value = tasks.value.map((task) => task.id === current.id ? mapTask(data.updateTask) : task);
+        createOpen.value = false;
+        editingId.value = null;
+        notice.value = 'タスクを更新しました。';
+    } catch (error) {
+        fieldErrors.value = error.validation || {};
+        showError(error);
+    } finally {
+        creating.value = false;
+    }
+    if (!createOpen.value) {
+        await nextTick();
+        if (formOpener?.isConnected) formOpener.focus();
+        else document.querySelector('input[aria-label="タスクを検索"]')?.focus();
+    }
+}
+function openDelete(task, event) {
+    if (busy.value || createOpen.value) return;
+    deleteOpener = event?.currentTarget;
+    deleteTarget.value = task;
+    deleteError.value = '';
+    operationError.value = '';
+    notice.value = '';
+}
+async function closeDelete() {
+    if (creating.value) return;
+    deleteTarget.value = null;
+    await nextTick();
+    deleteOpener?.focus();
+}
+async function refreshAfterDeleteError() {
+    await closeDelete();
+    await loadTasks();
+}
+async function deleteTask() {
+    if (busy.value || !deleteTarget.value) return;
+    const target = deleteTarget.value;
+    creating.value = true;
+    deleteError.value = '';
+    try {
+        const data = await request(`mutation DeleteTask($folder_id: ID!, $id: ID!, $confirm: Boolean!) {
+            deleteTask(folder_id: $folder_id, id: $id, confirm: $confirm) { id deleted }
+        }`, { folder_id: String(props.folder.id), id: String(target.id), confirm: true }, 'DeleteTask');
+        if (!data.deleteTask?.deleted || String(data.deleteTask.id) !== String(target.id)) throw Object.assign(new Error('削除結果を確認できません。一覧を再取得してください。'), { uncertain: true });
+        tasks.value = tasks.value.filter((task) => task.id !== target.id);
+        deleteTarget.value = null;
+        notice.value = 'タスクを削除しました。';
+    } catch (error) {
+        deleteError.value = error.message;
+        showError(error);
+    } finally {
+        creating.value = false;
+    }
+    if (!deleteTarget.value) {
+        await nextTick();
+        document.querySelector('input[aria-label="タスクを検索"]')?.focus();
+    }
 }
 async function createTask() {
     if (busy.value) return;
@@ -144,6 +252,11 @@ async function changeStatus(event, task) {
 const filter = ref('all');
 const pendingId = ref(null);
 const folderNavigation = ref(null);
+function updateFolders(event) {
+    if (event.detail.folders) folderList.value = event.detail.folders;
+    else if (event.detail.folder && !folderList.value.some((item) => String(item.id) === String(event.detail.folder.id))) folderList.value.push(event.detail.folder);
+    notice.value = event.detail.message || '';
+}
 const restorePage = (event) => {
     if (!event.persisted) return;
     pendingId.value = null;
@@ -152,12 +265,16 @@ const restorePage = (event) => {
 };
 onMounted(() => {
     window.addEventListener('pageshow', restorePage);
+    window.addEventListener('tasklist:folders-changed', updateFolders);
     loadTasks();
     folderNavigation.value
         ?.querySelector('[aria-current="page"]')
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 });
-onBeforeUnmount(() => window.removeEventListener('pageshow', restorePage));
+onBeforeUnmount(() => {
+    window.removeEventListener('pageshow', restorePage);
+    window.removeEventListener('tasklist:folders-changed', updateFolders);
+});
 const statuses = {
     1: { label: '未着手', variant: 'outline' },
     2: { label: '着手中', variant: 'default' },
@@ -200,6 +317,11 @@ const filters = computed(() => [
     },
     { value: 'done', label: '完了', count: complete.value },
 ]);
+function acceptCandidate(task) {
+    if (!tasks.value.some((item) => String(item.id) === String(task.id))) tasks.value.push(mapTask(task));
+    resetFilters();
+    notice.value = 'メールの候補をタスクに追加しました。';
+}
 function resetFilters() {
     search.value = '';
     filter.value = 'all';
@@ -214,11 +336,11 @@ function toggle(task) {
         <aside class="workspace-sidebar" aria-label="フォルダ一覧">
             <div class="sidebar-heading">
                 ワークスペース
-                <Badge variant="outline">{{ folders.length }}</Badge>
+                <Badge variant="outline">{{ folderList.length }}</Badge>
             </div>
             <nav ref="folderNavigation" class="folders-navigation">
                 <Button
-                    v-for="item in folders"
+                    v-for="item in folderList"
                     :key="item.id"
                     as-child
                     :variant="item.id === folder.id ? 'secondary' : 'ghost'"
@@ -236,7 +358,7 @@ function toggle(task) {
                 </Button>
             </nav>
             <Button as-child variant="outline" class="new-folder-button"
-                ><a :href="routes.createFolder"
+                ><a data-create-folder :href="routes.createFolder"
                     ><AppIcon name="plus" />フォルダを作成</a
                 ></Button
             >
@@ -246,7 +368,7 @@ function toggle(task) {
                 <div>
                     <h1 id="workspace-title">{{ folder.title }}</h1>
                 </div>
-                <Button type="button" class="add-task-button" :disabled="busy" :aria-expanded="createOpen" aria-controls="quick-task-form" @click="openCreate"
+                <Button type="button" class="add-task-button" :disabled="busy || createOpen" :aria-expanded="createOpen" aria-controls="quick-task-form" @click="openCreate"
                     ><AppIcon name="plus" />タスクを追加</Button
                 >
             </header>
@@ -258,9 +380,9 @@ function toggle(task) {
             </div>
             <p v-if="notice" class="workspace-message" role="status">{{ notice }}</p>
             <Card v-if="createOpen" class="quick-task-card">
-                <CardHeader><CardTitle>タスクを追加</CardTitle></CardHeader>
+                <CardHeader><CardTitle>{{ editingId === null ? 'タスクを追加' : 'タスクを編集' }}</CardTitle></CardHeader>
                 <CardContent>
-                    <form id="quick-task-form" class="quick-task-form" novalidate @submit.prevent="createTask" :aria-busy="creating">
+                    <form id="quick-task-form" class="quick-task-form" novalidate @submit.prevent="saveTask" :aria-busy="creating">
                         <div class="enhanced-field">
                             <label for="quick-task-title">タスク名 <span class="required-mark">*</span></label>
                             <Input id="quick-task-title" name="title" v-model="draft.title" required maxlength="100" :disabled="creating" :aria-invalid="!!fieldErrors.title" :aria-describedby="fieldErrors.title ? 'quick-title-error' : undefined" />
@@ -268,16 +390,17 @@ function toggle(task) {
                         </div>
                         <div class="enhanced-field">
                             <label for="quick-task-due-date">期限 <span class="required-mark">*</span></label>
-                            <Input id="quick-task-due-date" name="due_date" type="date" v-model="draft.due_date" required :min="today" :disabled="creating" :aria-invalid="!!fieldErrors.due_date" :aria-describedby="fieldErrors.due_date ? 'quick-date-error' : undefined" />
+                            <Input id="quick-task-due-date" name="due_date" type="date" v-model="draft.due_date" required :min="editingId === null ? today : undefined" :disabled="creating" :aria-invalid="!!fieldErrors.due_date" :aria-describedby="fieldErrors.due_date ? 'quick-date-error' : undefined" />
                             <p v-if="fieldErrors.due_date" id="quick-date-error" class="field-error">{{ fieldErrors.due_date[0] }}</p>
                         </div>
                         <div class="quick-task-actions">
-                            <Button type="button" variant="outline" :disabled="creating" @click="createOpen = false">キャンセル</Button>
-                            <Button type="submit" :disabled="busy"><span v-if="creating" class="pending-spinner" aria-hidden="true" />{{ creating ? '保存中…' : '保存する' }}</Button>
+                            <Button type="button" variant="outline" :disabled="creating" @click="closeForm">キャンセル</Button>
+                            <Button type="submit" :disabled="busy"><span v-if="creating" class="pending-spinner" aria-hidden="true" />{{ creating ? '保存中…' : editingId === null ? '保存する' : '更新する' }}</Button>
                         </div>
                     </form>
                 </CardContent>
             </Card>
+            <TaskCandidates :endpoint="routes.graphql" :csrf="csrf" :folder="folder" :today="today" :login-url="routes.login" :blocked="busy" @accepted="acceptCandidate" @refresh="loadTasks" />
             <div class="workspace-overview" aria-label="タスクの進捗">
                 <Card
                     ><CardHeader
@@ -367,10 +490,12 @@ function toggle(task) {
                                             class="complete-toggle"
                                             :disabled="busy"
                                         ><span v-if="pendingId === task.id" class="pending-spinner" aria-hidden="true" /><AppIcon v-else-if="task.status === 3" name="check" /><span v-else class="empty-check" /></Button>
-                                        <a
-                                            :href="task.editUrl"
+                                        <button
+                                            type="button"
                                             class="task-name"
-                                            >{{ task.title }}</a
+                                            :disabled="busy || createOpen"
+                                            @click="openEdit(task, $event)"
+                                            >{{ task.title }}</button
                                         >
                                     </div>
                                     <div class="task-status-cell">
@@ -401,24 +526,8 @@ function toggle(task) {
                                         >
                                     </div>
                                     <div class="task-row-actions">
-                                        <Button
-                                            as-child
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            ><a
-                                                :href="task.editUrl"
-                                                :aria-label="`${task.title}を編集`"
-                                                ><AppIcon
-                                                    name="edit" /></a></Button
-                                        ><Button
-                                            as-child
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            ><a
-                                                :href="task.deleteUrl"
-                                                :aria-label="`${task.title}を削除`"
-                                                ><AppIcon name="trash" /></a
-                                        ></Button>
+                                        <Button type="button" variant="ghost" size="icon-sm" :disabled="busy || createOpen" :aria-label="`${task.title}を編集`" @click="openEdit(task, $event)"><AppIcon name="edit" /></Button>
+                                        <Button type="button" variant="ghost" size="icon-sm" :disabled="busy || createOpen" :aria-label="`${task.title}を削除`" @click="openDelete(task, $event)"><AppIcon name="trash" /></Button>
                                     </div>
                                 </li>
                             </ul>
@@ -466,4 +575,5 @@ function toggle(task) {
             </div>
         </section>
     </div>
+    <TaskDeleteDialog v-if="deleteTarget" :task="deleteTarget" :pending="creating" :blocked="needsRefresh || loginRequired" :error="deleteError" :needs-refresh="needsRefresh" :login-required="loginRequired" :login-url="routes.login" @confirm="deleteTask" @cancel="closeDelete" @refresh="refreshAfterDeleteError" />
 </template>

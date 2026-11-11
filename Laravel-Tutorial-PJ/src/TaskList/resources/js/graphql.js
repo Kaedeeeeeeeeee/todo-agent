@@ -29,11 +29,12 @@ export async function graphql(endpoint, csrf, query, variables, operationName) {
     }
     if (result.errors?.length) {
         const first = result.errors[0];
-        throw Object.assign(new Error(first.extensions?.code === 'NOT_FOUND'
+        throw Object.assign(new Error(['NOT_FOUND', 'FORBIDDEN', 'BUSY', 'CONFLICT'].includes(first.extensions?.code)
             ? first.message : first.extensions?.validation
                 ? '入力内容を確認してください。' : '処理に失敗しました。一覧を再取得して確認してください。'), {
             validation: first.extensions?.validation || {},
-            uncertain: !['NOT_FOUND', 'VALIDATION_FAILED'].includes(first.extensions?.code),
+            code: first.extensions?.code,
+            uncertain: !['NOT_FOUND', 'VALIDATION_FAILED', 'FORBIDDEN', 'BUSY', 'CONFLICT'].includes(first.extensions?.code),
         });
     }
     if (!result.data) {
