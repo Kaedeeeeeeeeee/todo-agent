@@ -5,6 +5,13 @@ services:
     working_dir: /var/www/TaskList
     volumes:
       - ./src:/var/www
+  scheduler:
+    extends:
+      service: php
+    image: ${COMPOSE_PROJECT_NAME:-laravel-tutorial-pj}-php
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      - db
   nginx:
     restart: "no"
     image: nginx:stable

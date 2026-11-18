@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { graphql, taskFields } from '../graphql';
+import GmailAutomation from './GmailAutomation.vue';
 
 const props = defineProps({ endpoint: String, csrf: String, folder: Object, today: String, loginUrl: String, blocked: Boolean });
 const emit = defineEmits(['accepted', 'refresh']);
@@ -22,7 +23,7 @@ let timer;
 let disposed = false;
 const scopeLabel = (value) => value === 'BIZMATES' ? 'Bizmates 社内メール' : 'GitHub コードレビュー';
 const connectionFields = 'can_manage status account verified_at error service_status retry_after';
-const runFields = 'id scope status read_count candidate_count duplicate_count error';
+const runFields = 'id scope status read_count candidate_count duplicate_count error stage total_count scanned_count batch_count';
 const candidateFields = 'id message_id subject sender received_at title description reason evidence due_date status task_id';
 const active = computed(() => ['reading', 'extracting'].includes(inbox.value?.run?.status));
 const connected = computed(() => connection.value?.status === 'connected');
@@ -54,6 +55,7 @@ async function load() {
     finally {
         loading.value = false;
         if (!disposed && !error.value && (active.value || connection.value?.status === 'verifying' || ['busy', 'cooldown'].includes(connection.value?.service_status))) timer = setTimeout(load, 2500);
+        else if (!disposed && connected.value) timer = setTimeout(load, 10000);
     }
 }
 async function refresh() {
@@ -162,19 +164,20 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer); });
         <p v-if="connection?.can_manage && serviceLabel" :class="['mailbox-service', { 'field-error': connection.service_status === 'offline' }]" role="status">{{ serviceLabel }}<Button v-if="connection.service_status === 'offline' && !manageOpen && connected" type="button" variant="ghost" size="sm" :disabled="loading" @click="refresh">再確認</Button></p>
         <p v-if="connection && !connection.can_manage" class="mailbox-unavailable">このローカル環境の Gmail は、利用対象の TaskList アカウントで接続できます。</p>
     </section>
+    <GmailAutomation :endpoint="endpoint" :csrf="csrf" :connection="connection" :blocked="blocked" @refresh="refresh" />
     <section v-if="inbox?.enabled" class="candidate-panel" aria-labelledby="candidate-title">
         <div class="candidate-heading">
             <div><h2 id="candidate-title">メールからタスク候補</h2></div>
             <Button type="button" variant="outline" :aria-expanded="opened" aria-controls="candidate-content" @click="opened = !opened">{{ opened ? '閉じる' : `候補を確認${candidates.length ? ` (${candidates.length})` : ''}` }}</Button>
         </div>
         <div v-if="opened" id="candidate-content" class="candidate-content">
-            <p class="candidate-intro">最近30日のメールから、対応が必要そうな内容を整理します。確認した候補だけ「{{ folder.title }}」に追加されます。</p>
+            <p class="candidate-intro">過去24時間の対象メールをすべて確認し、対応が必要そうな内容を整理します。確認した候補だけ「{{ folder.title }}」に追加されます。</p>
             <form class="candidate-source-form" @submit.prevent="start">
                 <label for="gmail-source-scope">読み取るメール</label>
-                <select id="gmail-source-scope" v-model="scope" :disabled="readBusy"><option value="GITHUB">GitHub のコードレビュー（最新6件まで）</option><option value="BIZMATES">Bizmates 社内メール（最新6件まで）</option></select>
+                <select id="gmail-source-scope" v-model="scope" :disabled="readBusy"><option value="GITHUB">GitHub のコードレビュー</option><option value="BIZMATES">Bizmates 社内メール</option></select>
                 <Button type="submit" :disabled="readBusy">{{ active ? '整理中…' : pending ? '処理中…' : '読み取って候補を作成' }}</Button>
             </form>
-            <p v-if="active" class="candidate-progress" role="status"><span class="pending-spinner" aria-hidden="true" />{{ inbox.run.status === 'reading' ? 'Gmail を読み取っています…' : 'AI がタスク候補を整理しています…' }}</p>
+            <p v-if="active" class="candidate-progress" role="status"><span class="pending-spinner" aria-hidden="true" />{{ inbox.run.stage === 'listing' ? '過去24時間の対象メールを検索しています…' : inbox.run.status === 'reading' ? 'Gmail を読み取っています…' : 'AI がタスク候補を整理しています…' }}<span v-if="inbox.run.total_count !== null && inbox.run.stage !== 'legacy'">確認済み {{ inbox.run.scanned_count }} / {{ inbox.run.total_count }} 件 · 残り {{ Math.max(0, inbox.run.total_count - inbox.run.scanned_count) }} 件 · 新しい候補 {{ inbox.run.candidate_count }} 件</span></p>
             <p v-else-if="inbox.run?.status === 'succeeded'" class="candidate-result" role="status">{{ scopeLabel(inbox.run.scope) }}：メール {{ inbox.run.read_count }} 件を読み取り、新しい候補 {{ inbox.run.candidate_count }} 件を作成しました。<span v-if="inbox.run.duplicate_count">重複 {{ inbox.run.duplicate_count }} 件は追加していません。</span></p>
             <div v-if="error || inbox.run?.error" class="workspace-error" role="alert"><p>{{ error || `前回の読み取り：${inbox.run.error}` }}</p><a v-if="loginRequired" :href="loginUrl">ログインする</a><Button v-else type="button" size="sm" variant="outline" :disabled="loading || pending" @click="refresh">候補を再取得</Button></div>
             <div v-if="candidates.length" class="candidate-list">

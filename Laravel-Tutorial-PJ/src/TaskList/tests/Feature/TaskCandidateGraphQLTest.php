@@ -175,8 +175,9 @@ class TaskCandidateGraphQLTest extends TestCase
         $this->connect(User::factory()->create());
         Http::fake(['agent.test/*' => Http::response(['code' => 'BUSY', 'retry_after' => 3], 429)]);
         $this->postJson('/graphql', ['query' => 'mutation { extractGmailTasks(scope: GITHUB) { status error } }'])
-            ->assertJsonMissingPath('errors')->assertJsonPath('data.extractGmailTasks.status', 'failed')
-            ->assertJsonPath('data.extractGmailTasks.error', '前の処理が続いているか、連続読み取りの待機時間中です。少し待ってから再試行してください。');
+            ->assertJsonMissingPath('errors')->assertJsonPath('data.extractGmailTasks.status', 'reading')
+            ->assertJsonPath('data.extractGmailTasks.error', null);
+        $this->assertNotNull(TaskExtraction::first()->next_batch_at);
         $this->assertDatabaseCount('task_candidates', 0);
     }
 

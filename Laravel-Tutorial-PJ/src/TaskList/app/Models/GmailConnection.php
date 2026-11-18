@@ -13,6 +13,6 @@ class GmailConnection extends Model
 
     protected function casts(): array
     {
-        return ['verified_at' => 'datetime'];
+        return ['verified_at' => 'datetime', 'schedule_enabled' => 'boolean', 'next_run_at' => 'datetime', 'scan_state' => 'array'];
     }
 }

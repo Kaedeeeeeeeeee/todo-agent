@@ -7,6 +7,7 @@ use App\Models\TaskExtraction;
 use App\Models\User;
 use GraphQL\Error\Error;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -89,14 +90,19 @@ class GmailConnectionManager
             throw new Error('別の操作を処理しています。少し待ってから再試行してください。', extensions: ['code' => 'BUSY']);
         }
         try {
-            $connection = GmailConnection::firstOrCreate(['user_id' => $user->id]);
-            $ids = TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])->pluck('id')->all();
-            if ($connection->status === 'verifying' && $connection->verification_id) {
-                $ids[] = $connection->verification_id;
-            }
-            $connection->update(['status' => 'disconnected', 'verification_id' => null, 'verified_at' => null, 'error' => null]);
-            TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])
-                ->update(['status' => 'failed', 'error' => 'メール接続を解除したため、読み取りを中止しました。']);
+            $ids = DB::transaction(function () use ($user) {
+                $connection = GmailConnection::where('user_id', $user->id)->lockForUpdate()->firstOrCreate(['user_id' => $user->id]);
+                $ids = TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])->get()->map(fn ($run) => $run->batch_id ?? $run->id)->all();
+                if ($connection->status === 'verifying' && $connection->verification_id) {
+                    $ids[] = $connection->verification_id;
+                }
+                $connection->update(['status' => 'disconnected', 'verification_id' => null, 'verified_at' => null, 'error' => null, 'schedule_enabled' => false, 'next_run_at' => null]);
+                TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])
+                    ->update(['status' => 'failed', 'error' => 'メール接続を解除したため、読み取りを中止しました。', 'completed_at' => now(), 'retry_at' => null]);
+                TaskExtraction::where('user_id', $user->id)->whereNotNull('retry_at')->update(['retry_at' => null]);
+
+                return $ids;
+            });
             foreach ($ids as $id) {
                 try {
                     app(GmailTaskAgent::class)->cancel($id);

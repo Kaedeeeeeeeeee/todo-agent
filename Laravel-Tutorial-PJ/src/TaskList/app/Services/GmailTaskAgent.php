@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Log;
 
 class GmailTaskAgent
 {
-    public function start(string $id, string $scope): array
+    public function start(string $id, string $scope, array $options = [], string $kind = 'extract'): array
     {
-        return $this->request('post', '/runs/'.$id, ['scope' => $scope]);
+        return $this->request('post', '/runs/'.$id, ['scope' => $scope, 'scan' => $options, 'kind' => $kind]);
     }
 
     public function verify(string $id): array

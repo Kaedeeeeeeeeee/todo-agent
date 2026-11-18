@@ -90,3 +90,77 @@ test('mail source identity must match the verified mailbox before bodies are rea
     assert.throws(() => validateMailboxSources([{ display_url: 'https://example.test/?authuser=owner%40example.test' }], 'owner@example.test'), /GMAIL_ACCOUNT_CHANGED/);
     assert.throws(() => validateMailboxSources([{ display_url: null }], 'owner@example.test'), /GMAIL_ACCOUNT_CHANGED/);
 });
+
+test('incremental query validates bounds and scope without allowing query injection', async () => {
+    const { scanQuery } = await import('./gmail-agent.mjs');
+    assert.equal(scanQuery('BIZMATES', { after: 100, before: 200 }), '-in:spam -in:trash from:bizmates.co.jp after:100 before:200');
+    for (const scan of [{ after: '100 OR in:anywhere', before: 200 }, { after: 200, before: 100 }, { after: 100, before: 200, exclude_ids: ['bad-id'] }]) {
+        assert.throws(() => scanQuery('BIZMATES', scan), /INVALID_SCAN/);
+    }
+});
+
+test('pagination forwards frozen query and skips already processed mail before body reads', async () => {
+    const { scanPage } = await import('./gmail-agent.mjs');
+    process.env.TASK_AGENT_ACCOUNT = 'owner@example.test';
+    const mails = ['abc123', 'def456'].map(id => ({ id, display_url: `https://mail.google.com/mail/u/?authuser=owner%40example.test#all/${id}` }));
+    const result = await scanPage('BIZMATES', { after: 100, before: 200, page_token: 'page-two', exclude_ids: ['abc123'] }, undefined, async (prompt, tool) => {
+        assert.equal(tool, 'search_emails');
+        assert.ok(prompt.includes('"next_page_token":"page-two"'));
+        assert.ok(prompt.includes('after:100 before:200'));
+        return { emails: mails, next_page_token: 'page-three' };
+    });
+    assert.deepEqual(result.found.map(mail => mail.id), ['def456']);
+    assert.deepEqual(result.metadata, { processed_ids: ['abc123', 'def456'], skipped_count: 1, next_page_token: 'page-three' });
+});
+
+test('reader forwards scan windows and rejects malformed scan before executing extraction', async t => {
+    let received;
+    const request = await reader(t, { runExtraction: async (scope, update, signal, scan) => { received = scan; return { read_count: 0, candidates: [] }; } });
+    assert.equal((await request(runA, 'POST', { scope: 'BIZMATES', scan: { after: 'x', before: 200 } })).status, 422);
+    const scan = { after: 100, before: 200, exclude_ids: ['abc123'] };
+    assert.equal((await request(runA, 'POST', { scope: 'BIZMATES', scan })).status, 202);
+    await tick();
+    assert.deepEqual(received, scan);
+});
+
+test('daily search refuses windows beyond 24 hours', async () => {
+    const { scanQuery } = await import('./gmail-agent.mjs');
+    assert.throws(() => scanQuery('GITHUB', { after: 100, before: 86501 }), /INVALID_SCAN/);
+    assert.ok(scanQuery('GITHUB').includes('newer_than:1d'));
+});
+
+test('listing covers a full page and rejects headers outside the frozen daily window', async () => {
+    const { listPage } = await import('./gmail-agent.mjs');
+    process.env.TASK_AGENT_ACCOUNT = 'owner@example.test';
+    const mail = { id: 'abc123', subject: 'Review', from_: 'work@example.test', email_ts: '2026-11-18T10:00:00Z', display_url: 'https://mail.google.com/mail/u/?authuser=owner%40example.test#all/abc123' };
+    const scan = { after: Date.parse('2026-11-17T12:00:00Z') / 1000, before: Date.parse('2026-11-18T12:00:00Z') / 1000, page_token: null };
+    const listed = await listPage('GITHUB', scan, undefined, async prompt => {
+        assert.ok(prompt.includes('"max_results":100'));
+        return { emails: [mail], next_page_token: 'next' };
+    });
+    assert.equal(listed.messages.length, 1);
+    assert.equal(listed.next_page_token, 'next');
+    await assert.rejects(() => listPage('GITHUB', scan, undefined, async () => ({ emails: [{ ...mail, email_ts: '2026-11-16T10:00:00Z' }] })), /GMAIL_UNAVAILABLE/);
+});
+
+test('planned batches skip processed messages before reading any bodies', async () => {
+    const { plannedBatch } = await import('./gmail-agent.mjs');
+    process.env.TASK_AGENT_ACCOUNT = 'owner@example.test';
+    const mail = { id: 'abc123', display_url: 'https://mail.google.com/mail/u/?authuser=owner%40example.test#all/abc123' };
+    const page = plannedBatch({ messages: [mail], exclude_ids: ['abc123'] });
+    assert.deepEqual(page.found, []);
+    assert.equal(page.metadata.skipped_count, 1);
+    assert.throws(() => plannedBatch({ messages: Array(7).fill(mail) }), /INVALID_SCAN/);
+});
+
+test('reader supports durable listing jobs without invoking body extraction', async t => {
+    let listed;
+    let extracted = false;
+    const request = await reader(t, { runListing: async (scope, scan) => { listed = { scope, scan }; return { messages: [], next_page_token: null }; }, runExtraction: async () => { extracted = true; return {}; } });
+    const scan = { after: 100, before: 200, page_token: 'listing-next' };
+    assert.equal((await request(runA, 'POST', { scope: 'GITHUB', kind: 'list', scan })).status, 202);
+    await tick();
+    assert.deepEqual(listed, { scope: 'GITHUB', scan });
+    assert.equal(extracted, false);
+    assert.equal((await request(runA)).body.status, 'succeeded');
+});

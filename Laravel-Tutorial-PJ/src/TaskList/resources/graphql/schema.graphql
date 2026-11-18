@@ -1,3 +1,5 @@
+scalar DateTime @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
+
 scalar Date @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\Date")
 
 enum TaskStatus {
@@ -73,6 +75,18 @@ type TaskExtraction {
     read_count: Int!
     candidate_count: Int!
     duplicate_count: Int!
+    skipped_count: Int!
+    trigger: String!
+    attempt: Int!
+    retry_of: ID
+    retry_at: DateTime
+    stage: String!
+    total_count: Int
+    scanned_count: Int!
+    batch_count: Int!
+    has_more: Boolean!
+    created_at: DateTime!
+    completed_at: DateTime
     error: String
 }
 
@@ -108,7 +122,25 @@ type GmailConnectionState {
     retry_after: Int!
 }
 
+type GmailAutomationState {
+    enabled: Boolean!
+    time: String!
+    scope: GmailScope!
+    timezone: String!
+    next_run_at: String
+    last_run_at: String
+    worker_online: Boolean!
+}
+
+input GmailAutomationInput {
+    enabled: Boolean!
+    time: String!
+    scope: GmailScope!
+}
+
 type Query {
+    gmailAutomation: GmailAutomationState! @field(resolver: "App\\GraphQL\\GmailAutomationOperations@state")
+    gmailExtractionHistory: [TaskExtraction!]! @field(resolver: "App\\GraphQL\\GmailAutomationOperations@history")
     gmailConnection: GmailConnectionState! @field(resolver: "App\\GraphQL\\GmailConnectionOperations@state")
     candidateInbox: CandidateInbox! @field(resolver: "App\\GraphQL\\TaskCandidateOperations@inbox")
     me: User! @field(resolver: "App\\GraphQL\\TaskOperations@me")
@@ -121,6 +153,8 @@ type Query {
 }
 
 type Mutation {
+    updateGmailAutomation(input: GmailAutomationInput!): GmailAutomationState @field(resolver: "App\\GraphQL\\GmailAutomationOperations@save")
+    retryGmailExtraction(id: ID!): TaskExtraction @field(resolver: "App\\GraphQL\\GmailAutomationOperations@retry")
     createFolder(input: CreateFolderInput!): Folder @field(resolver: "App\\GraphQL\\TaskOperations@createFolder")
     connectGmail: GmailConnectionState @field(resolver: "App\\GraphQL\\GmailConnectionOperations@connect")
     disconnectGmail(confirm: Boolean!): GmailConnectionState @field(resolver: "App\\GraphQL\\GmailConnectionOperations@disconnect")
