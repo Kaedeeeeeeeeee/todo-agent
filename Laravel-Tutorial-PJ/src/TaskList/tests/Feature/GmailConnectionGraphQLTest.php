@@ -56,7 +56,7 @@ class GmailConnectionGraphQLTest extends TestCase
         Http::fake(['agent.test/health' => Http::response(['available' => true, 'busy' => false, 'retry_after' => 0])]);
         $this->postJson('/graphql', ['query' => self::STATE])->assertJsonMissingPath('errors')
             ->assertJsonPath('data.gmailConnection.status', 'disconnected')->assertJsonPath('data.gmailConnection.can_manage', true)
-            ->assertJsonPath('data.gmailConnection.service_status', 'ready')->assertJsonPath('data.candidateInbox.enabled', false);
+            ->assertJsonPath('data.gmailConnection.service_status', 'ready')->assertJsonPath('data.candidateInbox.enabled', true)->assertJsonCount(0, 'data.candidateInbox.candidates');
         $this->postJson('/graphql', ['query' => 'mutation { extractGmailTasks(scope: GITHUB) { id } }'])->assertJsonPath('errors.0.extensions.code', 'FORBIDDEN');
         Http::assertSentCount(1);
     }
@@ -85,7 +85,7 @@ class GmailConnectionGraphQLTest extends TestCase
         Http::fake(['agent.test/health' => Http::response(['busy' => false, 'retry_after' => 0]),
             'agent.test/runs/*' => Http::response(['status' => 'succeeded', 'account' => 'other@example.test'])]);
         $this->postJson('/graphql', ['query' => self::STATE])->assertJsonPath('data.gmailConnection.status', 'failed')
-            ->assertJsonPath('data.candidateInbox.enabled', false);
+            ->assertJsonPath('data.candidateInbox.enabled', true)->assertJsonCount(0, 'data.candidateInbox.candidates');
         $this->assertDatabaseMissing('gmail_connections', ['status' => 'connected']);
     }
 
@@ -111,7 +111,7 @@ class GmailConnectionGraphQLTest extends TestCase
         $this->postJson('/graphql', ['query' => self::DISCONNECT, 'variables' => ['confirm' => true]])->assertJsonMissingPath('errors')->assertJsonPath('data.disconnectGmail.status', 'disconnected');
         $this->assertDatabaseHas('task_extractions', ['id' => $run->id, 'status' => 'failed']);
         $this->assertDatabaseHas('task_candidates', ['id' => $candidate->id]);
-        $this->postJson('/graphql', ['query' => self::STATE])->assertJsonPath('data.candidateInbox.enabled', false)->assertJsonCount(0, 'data.candidateInbox.candidates');
+        $this->postJson('/graphql', ['query' => self::STATE])->assertJsonPath('data.candidateInbox.enabled', true)->assertJsonCount(0, 'data.candidateInbox.candidates')->assertJsonCount(0, 'data.candidateInbox.candidates');
         Http::assertSent(fn ($request) => $request->method() === 'DELETE' && str_ends_with($request->url(), $run->id));
     }
 
@@ -122,7 +122,7 @@ class GmailConnectionGraphQLTest extends TestCase
         TaskExtraction::factory()->create(['user_id' => $owner->id, 'status' => 'reading']);
         Http::fake(['agent.test/*' => Http::failedConnection()]);
         $this->postJson('/graphql', ['query' => self::DISCONNECT, 'variables' => ['confirm' => true]])->assertJsonMissingPath('errors')->assertJsonPath('data.disconnectGmail.status', 'disconnected');
-        $this->postJson('/graphql', ['query' => self::STATE])->assertJsonPath('data.candidateInbox.enabled', false);
+        $this->postJson('/graphql', ['query' => self::STATE])->assertJsonPath('data.candidateInbox.enabled', true)->assertJsonCount(0, 'data.candidateInbox.candidates');
     }
 
     public function test_disconnect_during_verification_cannot_be_undone_by_a_late_result(): void

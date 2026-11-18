@@ -164,3 +164,21 @@ test('reader supports durable listing jobs without invoking body extraction', as
     assert.equal(extracted, false);
     assert.equal((await request(runA)).body.status, 'succeeded');
 });
+
+test('combined reader dispatches both sources and validates custom criteria before starting', async t => {
+    const scan = { after: 1794884400, before: 1794970800, codex_after: 1794841200, codex_before: 1794927600,
+        instructions: '返信を優先', messages: [{ id: 'abc123', source_type: 'GMAIL' }, { id: 'def456', source_type: 'CODEX' }] };
+    const seen = [];
+    const request = await reader(t, {
+        runExtraction: async (scope, update, signal, options) => { seen.push([scope, options.instructions]); return { read_count: 1, skipped_count: 0, processed_ids: ['abc123'], candidates: [] }; },
+        runHistoryExtraction: async options => { seen.push(['CODEX', options.instructions]); return { read_count: 1, skipped_count: 0, processed_ids: ['def456'], candidates: [] }; },
+    });
+    assert.equal((await request(runA, 'POST', { scope: 'ALL', scan: { ...scan, instructions: 'x'.repeat(2001) } })).status, 422);
+    assert.equal((await request(runA, 'POST', { scope: 'ALL', scan })).status, 202);
+    await tick();
+    const result = (await request(runA)).body;
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.read_count, 2);
+    assert.deepEqual(result.processed_ids, ['abc123', 'def456']);
+    assert.deepEqual(seen, [['MAIL', '返信を優先'], ['CODEX', '返信を優先']]);
+});

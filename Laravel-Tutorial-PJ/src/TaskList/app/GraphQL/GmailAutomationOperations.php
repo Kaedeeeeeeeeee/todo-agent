@@ -23,7 +23,7 @@ class GmailAutomationOperations
 
     public function history(mixed $root, array $args, GraphQLContext $context): array
     {
-        if (! app(GmailConnectionManager::class)->eligible($context->user())) {
+        if (! app(GmailConnectionManager::class)->historyEligible($context->user())) {
             return [];
         }
 

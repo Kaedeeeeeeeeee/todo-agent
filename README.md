@@ -3,7 +3,7 @@
 Laravel 入門講座をもとに開発する、個人向け To Do アプリです。
 
 - **第1版**：ユーザー認証、フォルダ管理、タスクの作成・編集・削除、期限・状態の管理。
-- **第2版（実装中）**：Codex SDK と接続済み Gmail からタスク候補を作成し、原文を確認・修正してから登録。定時実行、Slack 連携、AI による進捗確認は今後実装。
+- **第2版（実装中）**：Codex SDK を使い、Gmail と前日の Codex 会話からタスク候補を作成。全量・分割処理、自分で編集できる整理条件、定時実行に対応し、原文を確認・修正してから登録します。Slack 連携と AI による進捗確認は今後実装します。
 
 詳細は [要件定義書](docs/todo-app-requirements.md) を参照してください。
 
@@ -31,7 +31,7 @@ cp src/TaskList/.env.example src/TaskList/.env
 両方の `.env` を編集し、ローカル開発用のパスワードを設定してください。Compose 側の `MYSQL_PASSWORD` と Laravel 側の `DB_PASSWORD` を一致させます。
 
 ```sh
-docker compose up -d --build
+docker compose up -d --build php nginx db mailpit
 docker compose exec php composer install --no-interaction
 docker compose exec php php artisan key:generate
 docker compose exec php php artisan migrate
@@ -50,13 +50,13 @@ npm ci
 npm run build
 ```
 
-## Gmail からのタスク候補作成
+## Gmail・Codex 会話からのタスク候補作成
 
 ローカル PC の Codex CLI に ChatGPT でログインし、Gmail プラグインを接続しておきます。Gmail の読み取りとアカウント確認を使います。
 
 `Laravel-Tutorial-PJ/src/TaskList/.env` に以下を設定します。
 
-- `TASK_AGENT_OWNER_ID`：この Gmail を利用する TaskList ユーザーの ID。
+- `TASK_AGENT_OWNER_ID`：この PC の Gmail・Codex 会話を利用する TaskList ユーザーの ID。
 - `TASK_AGENT_ACCOUNT`：Codex で接続済みの Gmail アドレス。接続時に実際のメールアドレスとの一致を確認します。
 - `TASK_AGENT_TOKEN`：PHP とローカル読み取りサービス間で共有する、32文字以上のランダムなトークン。
 - `TASK_AGENT_CODEX_BIN`：必要な場合のみ Codex CLI の実行ファイルパスを指定。
@@ -70,9 +70,28 @@ npm run agent
 
 一覧画面の「メール接続」から接続・解除できます。読み取りサービスはホストの `127.0.0.1:4195` で動き、PHP コンテナからは `TASK_AGENT_URL`（標準：`http://host.docker.internal:4195`）で接続します。
 
-現在は手動実行で、最近30日の GitHub コードレビューまたは Bizmates 社内メールを最新6件まで読み取ります。AI が候補と原文の根拠を提示し、ユーザーがタイトル・期限を確認してから既存フォルダへ追加します。同じメールからの重複作成を防ぎます。接続解除後も保存済みのタスク・候補は残ります。
+「AI タスク候補」から、次の読み取り元を選べます。
 
-この接続は本機で設定した1つの TaskList アカウント向けです。Google OAuth で任意の Gmail を直接追加する機能や、定時実行はまだ含みません。
+- すべてのメール：実行開始時点から過去24時間のメール本文。迷惑メール・ゴミ箱・添付ファイルは対象外です。
+- 前日の Codex 会話：日本時間で前日の0時から24時までに、この PC に保存された会話の依頼と最終回答。ツールログ、システム指示、サブエージェントや ChatGPT プロジェクトのログは含めません。
+- メール＋Codex：上記の両方を同じ候補一覧にまとめます。
+
+「整理の条件」に探してほしい内容を自由に入力できます。空欄なら、対応や継続が必要そうな内容を幅広く提案します。対象を全件列挙してから6件ずつ処理し、件数・進捗・実行履歴を保存します。これは1回の実行を6件に制限するものではありません。
+
+一覧は読み取り元ごとの最新実行の候補だけを表示します。履歴データは残し、同じ実行の再試行では途中まで保存した候補も引き継ぎます。AI が示した原文を確認し、タイトル・期限を修正してから追加します。処理中でも保存済みの候補は確認できます。同じ出典からの重複登録を防ぎ、Gmail 接続解除後も保存済みのタスク・候補は残ります。
+
+この接続は本機で設定した1つの TaskList アカウント向けです。任意の Gmail を Google OAuth で追加する機能や、別の端末・クラウドの Codex 会話の同期は含みません。
+
+### 定時整理
+
+「自動整理」で、毎日の実行時刻（日本時間）・読み取り元・整理の条件を保存できます。正式なタスクへの追加には引き続き確認が必要です。ローカルで定時処理やページを閉じた後の続きを実行する間は、`npm run agent` と次のバックグラウンド処理を起動します。
+
+```sh
+cd Laravel-Tutorial-PJ
+docker compose up -d scheduler
+```
+
+利用を終えたら `docker compose stop scheduler` と `npm run agent` の終了で停止します。コンテナの再起動ポリシーは `no` です。
 
 ## テスト
 
@@ -80,7 +99,7 @@ npm run agent
 cd Laravel-Tutorial-PJ
 docker compose exec php php artisan test --compact
 cd src/TaskList
-node --test resources/agent/gmail-agent.test.mjs
+node --test resources/agent/*.test.mjs
 npm run build
 ```
 

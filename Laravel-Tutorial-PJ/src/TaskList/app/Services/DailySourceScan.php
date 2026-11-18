@@ -12,19 +12,19 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Throwable;
 
-class DailyMailScan
+class DailySourceScan
 {
     public function send(TaskExtraction $run): void
     {
         try {
             DB::transaction(function () use ($run) {
                 GmailConnection::where('user_id', $run->user_id)->lockForUpdate()->firstOrFail();
-                if (! app(GmailConnectionManager::class)->connected(User::findOrFail($run->user_id))) {
+                if (! app(GmailConnectionManager::class)->canRead(User::findOrFail($run->user_id), $run->scope)) {
                     $run->update(['status' => 'failed', 'error' => 'メール接続が解除されたため、読み取りを中止しました。', 'completed_at' => now(), 'retry_at' => null]);
 
                     return;
                 }
-                $known = DB::table('gmail_processed_messages')->where('user_id', $run->user_id)->where('scope', $run->scope)
+                $known = DB::table('gmail_processed_messages')->where('user_id', $run->user_id)->where('scope', $this->processedScope($run))
                     ->where('processed_at', '>=', now()->subDays(2))->pluck('message_id')->all();
                 $known = array_values(array_unique(array_merge($known, TaskCandidate::where('user_id', $run->user_id)->pluck('message_id')->all())));
                 $options = array_merge($run->scan_options, ['exclude_ids' => $known]);
@@ -94,7 +94,7 @@ class DailyMailScan
                 if (! in_array($locked->status, ['reading', 'extracting']) || $locked->batch_id !== $run->batch_id) {
                     return;
                 }
-                if (! app(GmailConnectionManager::class)->connected(User::findOrFail($run->user_id))) {
+                if (! app(GmailConnectionManager::class)->canRead(User::findOrFail($run->user_id), $run->scope)) {
                     $locked->update(['status' => 'failed', 'error' => 'メール接続が解除されたため、結果は保存しませんでした。', 'completed_at' => now(), 'retry_at' => null]);
 
                     return;
@@ -118,9 +118,21 @@ class DailyMailScan
         $data = Validator::make($result, [
             'messages' => ['present', 'array', 'max:100'], 'messages.*.id' => ['required', 'regex:/^[a-f0-9]{1,64}$/', 'distinct'],
             'messages.*.subject' => ['present', 'string', 'max:2000'], 'messages.*.from_' => ['required', 'string', 'max:1000'],
-            'messages.*.email_ts' => ['required', 'string', 'max:50'], 'messages.*.display_url' => ['required', 'url', 'max:2048'],
-            'next_page_token' => ['present', 'nullable', 'string', 'max:2048'],
+            'messages.*.email_ts' => ['required', 'string', 'max:50'], 'messages.*.display_url' => ['required', 'string', 'max:2048'],
+            'messages.*.source_type' => ['sometimes', 'required', 'in:GMAIL,CODEX'],
+            'next_page_token' => ['present', 'nullable', 'string', 'max:4096'],
         ])->validate();
+        foreach ($data['messages'] as &$message) {
+            $type = $message['source_type'] ?? ($run->scope === 'CODEX' ? 'CODEX' : 'GMAIL');
+            $allowed = $run->scope === 'ALL' ? ['GMAIL', 'CODEX'] : [$run->scope === 'CODEX' ? 'CODEX' : 'GMAIL'];
+            if (! in_array($type, $allowed, true) || ($type === 'CODEX'
+                ? ! preg_match('~^codex://threads/[a-f0-9-]{36}$~', $message['display_url'])
+                : ! filter_var($message['display_url'], FILTER_VALIDATE_URL))) {
+                throw new \RuntimeException('Unexpected source metadata');
+            }
+            $message['source_type'] = $type;
+        }
+        unset($message);
         $tokens = $run->listing_tokens ?? [];
         $next = $data['next_page_token'];
         if ($next && (in_array($next, $tokens, true) || $next === ($run->scan_options['page_token'] ?? null))) {
@@ -163,12 +175,16 @@ class DailyMailScan
         }
         $added = 0;
         foreach ($data['candidates'] as $candidate) {
+            $source = collect($run->mail_plan)->firstWhere('id', $candidate['message_id']);
+            $candidate['source_type'] = $source['source_type'] ?? ($run->scope === 'CODEX' ? 'CODEX' : 'GMAIL');
+            $candidate['source_url'] = $candidate['source_type'] === 'CODEX' ? $source['display_url'] : null;
+
             $model = TaskCandidate::firstOrCreate(['user_id' => $run->user_id, 'message_id' => $candidate['message_id']],
                 array_merge($candidate, ['user_id' => $run->user_id, 'task_extraction_id' => $run->id, 'status' => 'pending']));
             $added += (int) $model->wasRecentlyCreated;
         }
         foreach ($expected as $id) {
-            DB::table('gmail_processed_messages')->insertOrIgnore(['user_id' => $run->user_id, 'scope' => $run->scope, 'message_id' => $id, 'processed_at' => now()]);
+            DB::table('gmail_processed_messages')->insertOrIgnore(['user_id' => $run->user_id, 'scope' => $this->processedScope($run), 'message_id' => $id, 'processed_at' => now()]);
         }
         $run->update(['scanned_count' => $run->scanned_count + count($expected), 'batch_count' => $run->batch_count + 1,
             'read_count' => $run->read_count + $data['read_count'], 'candidate_count' => $run->candidate_count + $added,
@@ -179,6 +195,16 @@ class DailyMailScan
         } else {
             $this->complete($run);
         }
+    }
+
+    private function processedScope(TaskExtraction $run): string
+    {
+        $instructions = trim($run->scan_options['instructions'] ?? '');
+        if (in_array($run->scope, ['MAIL', 'ALL', 'CODEX'])) {
+            return 'GENERAL:'.substr(hash('sha256', $instructions), 0, 16);
+        }
+
+        return $run->scope.($instructions === '' ? '' : ':'.substr(hash('sha256', $instructions), 0, 16));
     }
 
     private function queueNext(TaskExtraction $run): void

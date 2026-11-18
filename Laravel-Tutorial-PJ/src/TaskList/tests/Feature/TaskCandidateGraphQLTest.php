@@ -9,6 +9,7 @@ use App\Models\TaskExtraction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class TaskCandidateGraphQLTest extends TestCase
@@ -189,6 +190,85 @@ class TaskCandidateGraphQLTest extends TestCase
             ->assertJsonPath('data.extractGmailTasks.status', 'failed')
             ->assertJsonPath('data.extractGmailTasks.error', 'メール読み取りサービスに接続できません。サービスの起動状態を確認してください。');
         $this->assertDatabaseCount('tasks', 0);
+    }
+
+    public function test_inbox_only_shows_latest_run_candidates_and_preserves_older_records(): void
+    {
+        $this->freezeTime();
+        $owner = User::factory()->create();
+        $this->connect($owner);
+        $older = TaskExtraction::factory()->create(['user_id' => $owner->id, 'created_at' => now()->subHour()]);
+        $oldCandidate = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $older->id]);
+        $latest = TaskExtraction::factory()->create(['user_id' => $owner->id]);
+        $pending = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $latest->id]);
+        $handled = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $latest->id, 'status' => 'dismissed']);
+        TaskCandidate::factory()->create();
+
+        $response = $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: GITHUB) { latest_run { id } candidates { id status } } }'])
+            ->assertJsonMissingPath('errors')->assertJsonPath('data.candidateInbox.latest_run.id', $latest->id)
+            ->assertJsonCount(2, 'data.candidateInbox.candidates');
+        $this->assertEqualsCanonicalizing([(string) $pending->id, (string) $handled->id], array_column($response->json('data.candidateInbox.candidates'), 'id'));
+        $this->assertDatabaseHas('task_candidates', ['id' => $oldCandidate->id, 'status' => 'pending']);
+        Http::assertNothingSent();
+    }
+
+    #[TestWith(['succeeded'])]
+    #[TestWith(['failed'])]
+    #[TestWith(['reading'])]
+    public function test_latest_empty_run_never_falls_back_to_older_pending_candidates(string $status): void
+    {
+        $this->freezeTime();
+        $owner = User::factory()->create();
+        $this->connect($owner);
+        $old = TaskExtraction::factory()->create(['user_id' => $owner->id, 'created_at' => now()->subHour()]);
+        $candidate = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $old->id]);
+        $latest = TaskExtraction::factory()->create(['user_id' => $owner->id, 'status' => $status, 'stage' => 'processing', 'next_batch_at' => now()->addMinute()]);
+
+        $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: GITHUB) { latest_run { id status } candidates { id } } }'])
+            ->assertJsonMissingPath('errors')->assertJsonPath('data.candidateInbox.latest_run.id', $latest->id)
+            ->assertJsonPath('data.candidateInbox.latest_run.status', $status)->assertJsonCount(0, 'data.candidateInbox.candidates');
+        $this->assertDatabaseHas('task_candidates', ['id' => $candidate->id, 'status' => 'pending']);
+        Http::assertNothingSent();
+    }
+
+    public function test_each_source_has_its_own_latest_result_and_missing_sources_are_empty(): void
+    {
+        $this->freezeTime();
+        $owner = User::factory()->create();
+        $this->connect($owner);
+        $github = TaskExtraction::factory()->create(['user_id' => $owner->id, 'created_at' => now()->subHour()]);
+        $candidate = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $github->id]);
+        $codex = TaskExtraction::factory()->create(['user_id' => $owner->id, 'scope' => 'CODEX']);
+        TaskExtraction::factory()->create(['scope' => 'GITHUB', 'created_at' => now()->addMinute()]);
+
+        $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: GITHUB) { run { id } latest_run { id } candidates { id } } }'])
+            ->assertJsonMissingPath('errors')->assertJsonPath('data.candidateInbox.run.id', $codex->id)
+            ->assertJsonPath('data.candidateInbox.latest_run.id', $github->id)
+            ->assertJsonPath('data.candidateInbox.candidates.0.id', (string) $candidate->id)->assertJsonCount(1, 'data.candidateInbox.candidates');
+        $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: CODEX) { latest_run { id } candidates { id } } }'])
+            ->assertJsonPath('data.candidateInbox.latest_run.id', $codex->id)->assertJsonCount(0, 'data.candidateInbox.candidates');
+        $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: BIZMATES) { latest_run { id } candidates { id } } }'])
+            ->assertJsonPath('data.candidateInbox.latest_run', null)->assertJsonCount(0, 'data.candidateInbox.candidates');
+        Http::assertNothingSent();
+    }
+
+    public function test_resumed_run_includes_candidates_from_its_earlier_batches_only(): void
+    {
+        $this->freezeTime();
+        $owner = User::factory()->create();
+        $this->connect($owner);
+        $unrelated = TaskExtraction::factory()->create(['user_id' => $owner->id, 'created_at' => now()->subHours(2)]);
+        TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $unrelated->id]);
+        $first = TaskExtraction::factory()->create(['user_id' => $owner->id, 'status' => 'failed', 'stage' => 'processing', 'created_at' => now()->subHour()]);
+        $partial = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $first->id]);
+        $latest = TaskExtraction::factory()->create(['user_id' => $owner->id, 'stage' => 'complete', 'retry_of' => $first->id]);
+        $new = TaskCandidate::factory()->create(['user_id' => $owner->id, 'task_extraction_id' => $latest->id]);
+
+        $response = $this->postJson('/graphql', ['query' => '{ candidateInbox(scope: GITHUB) { latest_run { id } candidates { id } } }'])
+            ->assertJsonMissingPath('errors')->assertJsonPath('data.candidateInbox.latest_run.id', $latest->id)
+            ->assertJsonCount(2, 'data.candidateInbox.candidates');
+        $this->assertEqualsCanonicalizing([(string) $partial->id, (string) $new->id], array_column($response->json('data.candidateInbox.candidates'), 'id'));
+        Http::assertNothingSent();
     }
 
     private function agentResult(): array

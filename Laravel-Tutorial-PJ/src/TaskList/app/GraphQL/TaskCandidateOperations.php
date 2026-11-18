@@ -17,23 +17,51 @@ class TaskCandidateOperations
 {
     public function inbox(mixed $root, array $args, GraphQLContext $context): array
     {
-        $enabled = $this->enabled($context);
-        if (! $enabled) {
-            return ['enabled' => false, 'account' => null, 'run' => null, 'candidates' => []];
+        $user = $context->user();
+        $access = app(GmailConnectionManager::class);
+        $history = $access->historyEligible($user);
+        $gmail = $access->connected($user);
+        $sources = array_merge($history ? ['CODEX'] : [], $gmail ? ['GMAIL'] : []);
+        if (! $sources) {
+            return ['enabled' => false, 'codex_available' => false, 'account' => null, 'run' => null, 'latest_run' => null, 'candidates' => []];
         }
-        $run = TaskExtraction::where('user_id', $context->user()->id)->latest()->first();
+        $scopes = array_merge($history ? ['CODEX'] : [], $gmail ? ['GITHUB', 'BIZMATES', 'MAIL'] : [], $gmail && $history ? ['ALL'] : []);
+        $runs = TaskExtraction::where('user_id', $user->id)->whereIn('scope', $scopes)->latest()->orderByDesc('id');
+        $run = (clone $runs)->first();
         if ($run && in_array($run->status, ['reading', 'extracting'])) {
             app(TaskExtractionManager::class)->refresh($run);
         }
+        $latest = isset($args['scope']) ? (clone $runs)->where('scope', $args['scope'])->first() : $run;
+        if ($latest && $latest->id !== $run?->id && in_array($latest->status, ['reading', 'extracting'])) {
+            app(TaskExtractionManager::class)->refresh($latest);
+        }
+        $query = TaskCandidate::where('user_id', $user->id)->whereIn('source_type', $sources)
+            ->whereIn('task_extraction_id', $latest ? $this->candidateRunIds($latest) : []);
 
-        return ['enabled' => true, 'account' => config('services.task_agent.account'), 'run' => $run,
-            'candidates' => TaskCandidate::where('user_id', $context->user()->id)->where('status', 'pending')->get()
-                ->concat(TaskCandidate::where('user_id', $context->user()->id)->where('status', '!=', 'pending')->latest('id')->limit(50)->get())->sortByDesc('id')->values()];
+        return ['enabled' => true, 'codex_available' => $history, 'account' => $gmail ? config('services.task_agent.account') : null, 'run' => $run, 'latest_run' => $latest,
+            'candidates' => $query->latest('id')->get()];
+    }
+
+    /** @return list<string> */
+    private function candidateRunIds(TaskExtraction $run): array
+    {
+        $ids = [$run->id];
+        while ($run->stage !== 'legacy' && $run->retry_of && ! in_array($run->retry_of, $ids, true)) {
+            $previous = TaskExtraction::where('user_id', $run->user_id)->where('scope', $run->scope)
+                ->where('stage', '!=', 'legacy')->find($run->retry_of);
+            if (! $previous) {
+                break;
+            }
+            $ids[] = $previous->id;
+            $run = $previous;
+        }
+
+        return $ids;
     }
 
     public function start(mixed $root, array $args, GraphQLContext $context): TaskExtraction
     {
-        return app(TaskExtractionManager::class)->start($context->user(), $args['scope']);
+        return app(TaskExtractionManager::class)->start($context->user(), $args['scope'], instructions: $args['instructions'] ?? '');
     }
 
     public function accept(mixed $root, array $args, GraphQLContext $context): array
@@ -42,6 +70,9 @@ class TaskCandidateOperations
 
         return DB::transaction(function () use ($args, $context) {
             $candidate = $this->candidate($args['id'], $context);
+            if (! app(GmailConnectionManager::class)->canRead($context->user(), $candidate->source_type === 'CODEX' ? 'CODEX' : 'GITHUB')) {
+                throw new Error('この読み取り元は接続されていません。', extensions: ['code' => 'FORBIDDEN']);
+            }
             $folder = $context->user()->folders()->find($args['folder_id']);
             if (! $folder) {
                 throw new Error('フォルダが見つかりません。', extensions: ['code' => 'NOT_FOUND']);
@@ -80,6 +111,9 @@ class TaskCandidateOperations
 
         return DB::transaction(function () use ($args, $context) {
             $candidate = $this->candidate($args['id'], $context);
+            if (! app(GmailConnectionManager::class)->canRead($context->user(), $candidate->source_type === 'CODEX' ? 'CODEX' : 'GITHUB')) {
+                throw new Error('この読み取り元は接続されていません。', extensions: ['code' => 'FORBIDDEN']);
+            }
             if ($candidate->status === 'accepted') {
                 throw new Error('この候補は追加済みです。', extensions: ['code' => 'CONFLICT']);
             }
@@ -101,7 +135,7 @@ class TaskCandidateOperations
 
     private function enabled(GraphQLContext $context): bool
     {
-        return app(GmailConnectionManager::class)->connected($context->user());
+        return app(GmailConnectionManager::class)->connected($context->user()) || app(GmailConnectionManager::class)->historyEligible($context->user());
     }
 
     private function authorize(GraphQLContext $context): void

@@ -24,13 +24,13 @@ class GmailAutomation
 
     public function state(User $user): array
     {
-        $connection = app(GmailConnectionManager::class)->eligible($user)
+        $connection = app(GmailConnectionManager::class)->historyEligible($user)
             ? GmailConnection::where('user_id', $user->id)->first() : null;
         $heartbeat = Cache::get('gmail-automation-heartbeat');
         $last = $connection ? TaskExtraction::where('user_id', $user->id)->latest()->first() : null;
 
         return ['enabled' => (bool) $connection?->schedule_enabled, 'time' => $connection?->schedule_time ?? '09:00',
-            'scope' => $connection?->schedule_scope ?? 'BIZMATES', 'timezone' => 'Asia/Tokyo',
+            'scope' => $connection?->schedule_scope ?? 'BIZMATES', 'timezone' => 'Asia/Tokyo', 'instructions' => $connection?->schedule_instructions ?? '',
             'next_run_at' => $connection?->next_run_at?->toIso8601String(),
             'worker_online' => $heartbeat && Carbon::parse($heartbeat)->gt(now()->subSeconds(90)),
             'last_run_at' => $last?->created_at?->toIso8601String()];
@@ -38,24 +38,25 @@ class GmailAutomation
 
     public function save(User $user, array $input): array
     {
-        if (! app(GmailConnectionManager::class)->connected($user)) {
-            throw new Error('Gmail を接続してから自動読み取りを設定してください。', extensions: ['code' => 'FORBIDDEN']);
+        if (! app(GmailConnectionManager::class)->canRead($user, $input['scope'])) {
+            throw new Error('選択した読み取り元を接続してから設定してください。', extensions: ['code' => 'FORBIDDEN']);
         }
-        $validator = Validator::make($input, ['enabled' => ['required', 'boolean'], 'time' => ['required', 'date_format:H:i'], 'scope' => ['required', 'in:BIZMATES,GITHUB']]);
+        $validator = Validator::make($input, ['enabled' => ['required', 'boolean'], 'time' => ['required', 'date_format:H:i'], 'scope' => ['required', 'in:BIZMATES,GITHUB,CODEX,MAIL,ALL'], 'instructions' => ['nullable', 'string', 'max:2000']]);
         if ($validator->fails()) {
             throw new Error('実行時刻と読み取り範囲を確認してください。', extensions: ['code' => 'VALIDATION_FAILED', 'validation' => $validator->errors()->messages()]);
         }
+        $input['instructions'] = trim($input['instructions'] ?? '');
         $lock = Cache::lock('gmail-extraction:'.$user->id, 30);
         if (! $lock->get()) {
             throw new Error('読み取りを処理中です。少し待って保存してください。', extensions: ['code' => 'BUSY']);
         }
         try {
-            if (! app(GmailConnectionManager::class)->connected($user)) {
-                throw new Error('Gmail を再接続してください。', extensions: ['code' => 'FORBIDDEN']);
+            if (! app(GmailConnectionManager::class)->canRead($user, $input['scope'])) {
+                throw new Error('読み取り元の接続状態を確認してください。', extensions: ['code' => 'FORBIDDEN']);
             }
-            $connection = GmailConnection::where('user_id', $user->id)->firstOrFail();
-            $unchanged = $connection->schedule_enabled && $input['enabled'] && $connection->schedule_time === $input['time'] && $connection->schedule_scope === $input['scope'];
-            $connection->update(['schedule_enabled' => $input['enabled'], 'schedule_time' => $input['time'], 'schedule_scope' => $input['scope'],
+            $connection = GmailConnection::firstOrCreate(['user_id' => $user->id]);
+            $unchanged = $connection->schedule_enabled && $input['enabled'] && $connection->schedule_time === $input['time'] && $connection->schedule_scope === $input['scope'] && ($connection->schedule_instructions ?? '') === $input['instructions'];
+            $connection->update(['schedule_enabled' => $input['enabled'], 'schedule_time' => $input['time'], 'schedule_scope' => $input['scope'], 'schedule_instructions' => $input['instructions'],
                 'next_run_at' => $input['enabled'] ? ($unchanged ? $connection->next_run_at : $this->nextRun($input['time'])) : null]);
             if (! $input['enabled']) {
                 TaskExtraction::where('user_id', $user->id)->whereNotNull('retry_at')->update(['retry_at' => null]);
@@ -81,7 +82,7 @@ class GmailAutomation
             }
             foreach (TaskExtraction::where('status', 'failed')->where('retry_at', '<=', now())->get() as $run) {
                 $user = User::find($run->user_id);
-                if ($user && app(GmailConnectionManager::class)->connected($user)) {
+                if ($user && app(GmailConnectionManager::class)->canRead($user, $run->scope)) {
                     try {
                         $manager->start($user, $run->scope, 'retry', $run);
                     } catch (Error) {
@@ -93,7 +94,7 @@ class GmailAutomation
             }
             foreach (GmailConnection::where('schedule_enabled', true)->where('next_run_at', '<=', now())->get() as $connection) {
                 $user = User::find($connection->user_id);
-                if ($user && app(GmailConnectionManager::class)->connected($user)) {
+                if ($user && app(GmailConnectionManager::class)->canRead($user, $connection->schedule_scope)) {
                     try {
                         $manager->start($user, $connection->schedule_scope, 'scheduled');
                     } catch (Error) {

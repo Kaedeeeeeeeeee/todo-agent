@@ -178,10 +178,11 @@ class DailyMailScanTest extends TestCase
         Http::assertSentCount(4);
     }
 
-    public function test_all_pending_candidates_are_visible_after_large_scan(): void
+    public function test_all_pending_candidates_from_latest_run_are_visible_after_large_scan(): void
     {
         $user = $this->owner();
-        TaskCandidate::factory()->count(55)->create(['user_id' => $user->id]);
+        $run = TaskExtraction::factory()->create(['user_id' => $user->id]);
+        TaskCandidate::factory()->count(55)->create(['user_id' => $user->id, 'task_extraction_id' => $run->id]);
         $this->postJson('/graphql', ['query' => '{ candidateInbox { candidates { id } } }'])
             ->assertJsonMissingPath('errors')->assertJsonCount(55, 'data.candidateInbox.candidates');
         Http::assertNothingSent();

@@ -16,17 +16,21 @@ use Throwable;
 
 class TaskExtractionManager
 {
-    public function start(User $user, string $scope, string $trigger = 'manual', ?TaskExtraction $previous = null): ?TaskExtraction
+    public function start(User $user, string $scope, string $trigger = 'manual', ?TaskExtraction $previous = null, string $instructions = ''): ?TaskExtraction
     {
+        if (mb_strlen($instructions) > 2000) {
+            throw new Error('整理の条件は2000文字以内で入力してください。', extensions: ['code' => 'VALIDATION_FAILED']);
+        }
+        $instructions = trim($instructions);
         $lock = Cache::lock('gmail-extraction:'.$user->id, 30);
         if (! $lock->get()) {
             throw new Error('別の読み取り操作を処理しています。少し待ってから再試行してください。', extensions: ['code' => 'BUSY']);
         }
         try {
-            if (! app(GmailConnectionManager::class)->connected($user)) {
-                throw new Error('このアカウントには Gmail が接続されていません。', extensions: ['code' => 'FORBIDDEN']);
+            if (! app(GmailConnectionManager::class)->canRead($user, $scope)) {
+                throw new Error('選択した読み取り元を利用できません。接続状態を確認してください。', extensions: ['code' => 'FORBIDDEN']);
             }
-            $connection = GmailConnection::where('user_id', $user->id)->firstOrFail();
+            $connection = GmailConnection::firstOrCreate(['user_id' => $user->id]);
             if ($trigger === 'scheduled' && (! $connection->schedule_enabled || (! $connection->next_run_at || $connection->next_run_at->gt(now())))) {
                 return null;
             }
@@ -58,9 +62,14 @@ class TaskExtractionManager
             $connection->refresh();
             $resume = $previous && $previous->stage !== 'legacy';
             $options = $resume ? $previous->scan_options : [
-                'after' => now()->subDay()->timestamp,
-                'before' => now()->timestamp,
+                'after' => $scope === 'CODEX' ? now('Asia/Tokyo')->startOfDay()->subDay()->timestamp : now()->subDay()->timestamp,
+                'before' => $scope === 'CODEX' ? now('Asia/Tokyo')->startOfDay()->timestamp : now()->timestamp,
                 'page_token' => null,
+                'instructions' => $trigger === 'scheduled' ? ($connection->schedule_instructions ?? '') : $instructions,
+                ...($scope === 'ALL' ? [
+                    'codex_after' => now('Asia/Tokyo')->startOfDay()->subDay()->timestamp,
+                    'codex_before' => now('Asia/Tokyo')->startOfDay()->timestamp,
+                ] : []),
             ];
             $run = DB::transaction(function () use ($user, $scope, $trigger, $previous, $options, $connection, $resume) {
                 $run = TaskExtraction::create(['user_id' => $user->id, 'scope' => $scope, 'status' => 'reading',
@@ -79,7 +88,7 @@ class TaskExtractionManager
 
                 return $run;
             });
-            app(DailyMailScan::class)->send($run);
+            app(DailySourceScan::class)->send($run);
 
             return $run;
         } finally {
@@ -90,7 +99,7 @@ class TaskExtractionManager
     public function refresh(TaskExtraction $run): void
     {
         if ($run->stage !== 'legacy') {
-            app(DailyMailScan::class)->refresh($run);
+            app(DailySourceScan::class)->refresh($run);
 
             return;
         }
@@ -183,7 +192,7 @@ class TaskExtractionManager
     public function fail(TaskExtraction $run, string $message): void
     {
         $automatic = in_array($run->trigger, ['scheduled', 'retry']) && $run->attempt < 3
-            && GmailConnection::where('user_id', $run->user_id)->where('schedule_enabled', true)->where('status', 'connected')->exists();
+            && GmailConnection::where('user_id', $run->user_id)->where('schedule_enabled', true)->where(fn ($query) => $query->where('status', 'connected')->orWhere('schedule_scope', 'CODEX'))->exists();
         $run->update(['status' => 'failed', 'error' => $message, 'completed_at' => now(),
             'retry_at' => $automatic ? now()->addMinutes($run->attempt * 2) : null]);
     }

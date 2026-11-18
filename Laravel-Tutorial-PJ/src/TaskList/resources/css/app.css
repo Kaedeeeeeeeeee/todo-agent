@@ -990,10 +990,13 @@ button.task-name {
 .candidate-card input {margin-top:6px;}
 .candidate-description {font-size:14px; line-height:1.8; margin:14px 0; white-space:pre-wrap; overflow-wrap:anywhere;}
 .candidate-card details {font-size:12px; line-height:1.8; color:var(--muted-foreground);}
+.candidate-details {margin-top:12px;}
 .candidate-card summary,.candidate-history summary {cursor:pointer;}
 .candidate-card blockquote {border-left:2px solid var(--border); padding-left:12px; margin:12px 0; white-space:pre-wrap; overflow-wrap:anywhere;}
 .candidate-confirm {display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-top:20px;}
-.candidate-confirm input {width:180px;}
+.candidate-confirm > div:first-child {display:flex; align-items:center; flex-wrap:wrap; gap:8px;}
+.candidate-confirm input {width:180px; margin-top:0;}
+.candidate-confirm .field-error {flex-basis:100%;}
 .candidate-actions {display:flex; gap:8px; flex-wrap:wrap;}
 .candidate-hint {margin-top:6px;}
 .candidate-history {font-size:13px; margin-top:20px;}
@@ -1067,3 +1070,10 @@ button.task-name {
         padding-right: 8px;
     }
 }
+
+.selection-conditions {flex-basis:100%; width:100%; min-width:0; font-size:12px; color:var(--muted-foreground);}
+.selection-conditions summary {cursor:pointer; width:fit-content;}
+.selection-conditions label {display:block; margin:12px 0 6px;}
+.selection-conditions textarea {display:block; width:100%; box-sizing:border-box; min-height:76px; resize:vertical; padding:10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--background); color:var(--foreground); font:inherit; font-size:13px;}
+.selection-conditions textarea:focus-visible {outline:2px solid var(--ring); outline-offset:2px;}
+.selection-conditions p {margin:6px 0 0;}

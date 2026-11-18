@@ -20,6 +20,22 @@ class GmailConnectionManager
             && filled(config('services.task_agent.account'));
     }
 
+    public function historyEligible(User $user): bool
+    {
+        return filled(config('services.task_agent.owner_id')) && filled(config('services.task_agent.token'))
+            && (string) $user->id === (string) config('services.task_agent.owner_id');
+    }
+
+    public function canRead(User $user, string $scope): bool
+    {
+        return match ($scope) {
+            'CODEX' => $this->historyEligible($user),
+            'ALL' => $this->historyEligible($user) && $this->connected($user),
+            'MAIL', 'GITHUB', 'BIZMATES' => $this->connected($user),
+            default => false,
+        };
+    }
+
     public function connected(User $user): bool
     {
         return $this->eligible($user) && GmailConnection::where('user_id', $user->id)->where('status', 'connected')
@@ -28,7 +44,7 @@ class GmailConnectionManager
 
     public function state(User $user): array
     {
-        if (! $this->eligible($user)) {
+        if (! $this->eligible($user) && ! $this->historyEligible($user)) {
             return ['can_manage' => false, 'status' => 'unavailable', 'account' => null, 'verified_at' => null,
                 'error' => null, 'service_status' => 'unavailable', 'retry_after' => 0];
         }
@@ -48,8 +64,8 @@ class GmailConnectionManager
             $retryAfter = 0;
         }
 
-        return ['can_manage' => true, 'status' => $connection?->status ?? 'disconnected',
-            'account' => $connection?->account ?? strtolower(config('services.task_agent.account')),
+        return ['can_manage' => $this->eligible($user), 'status' => $this->eligible($user) ? ($connection?->status ?? 'disconnected') : 'unavailable',
+            'account' => $this->eligible($user) ? ($connection?->account ?? strtolower(config('services.task_agent.account'))) : null,
             'verified_at' => $connection?->verified_at?->toIso8601String(), 'error' => $connection?->error,
             'service_status' => $serviceStatus, 'retry_after' => $retryAfter];
     }
@@ -92,14 +108,14 @@ class GmailConnectionManager
         try {
             $ids = DB::transaction(function () use ($user) {
                 $connection = GmailConnection::where('user_id', $user->id)->lockForUpdate()->firstOrCreate(['user_id' => $user->id]);
-                $ids = TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])->get()->map(fn ($run) => $run->batch_id ?? $run->id)->all();
+                $ids = TaskExtraction::where('user_id', $user->id)->where('scope', '!=', 'CODEX')->whereIn('status', ['reading', 'extracting'])->get()->map(fn ($run) => $run->batch_id ?? $run->id)->all();
                 if ($connection->status === 'verifying' && $connection->verification_id) {
                     $ids[] = $connection->verification_id;
                 }
-                $connection->update(['status' => 'disconnected', 'verification_id' => null, 'verified_at' => null, 'error' => null, 'schedule_enabled' => false, 'next_run_at' => null]);
-                TaskExtraction::where('user_id', $user->id)->whereIn('status', ['reading', 'extracting'])
+                $connection->update(['status' => 'disconnected', 'verification_id' => null, 'verified_at' => null, 'error' => null, 'schedule_enabled' => $connection->schedule_scope === 'CODEX' && $connection->schedule_enabled, 'next_run_at' => $connection->schedule_scope === 'CODEX' ? $connection->next_run_at : null]);
+                TaskExtraction::where('user_id', $user->id)->where('scope', '!=', 'CODEX')->whereIn('status', ['reading', 'extracting'])
                     ->update(['status' => 'failed', 'error' => 'メール接続を解除したため、読み取りを中止しました。', 'completed_at' => now(), 'retry_at' => null]);
-                TaskExtraction::where('user_id', $user->id)->whereNotNull('retry_at')->update(['retry_at' => null]);
+                TaskExtraction::where('user_id', $user->id)->where('scope', '!=', 'CODEX')->whereNotNull('retry_at')->update(['retry_at' => null]);
 
                 return $ids;
             });

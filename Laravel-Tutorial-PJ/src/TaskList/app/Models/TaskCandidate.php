@@ -11,6 +11,8 @@ class TaskCandidate extends Model
 
     protected $guarded = ['id'];
 
+    protected $attributes = ['source_type' => 'GMAIL'];
+
     protected function casts(): array
     {
         return ['due_date' => 'date'];

@@ -12,6 +12,11 @@ class TaskExtraction extends Model
 
     protected $guarded = ['id'];
 
+    public function getInstructionsAttribute(): string
+    {
+        return $this->scan_options['instructions'] ?? '';
+    }
+
     protected function casts(): array
     {
         return ['retry_at' => 'datetime', 'completed_at' => 'datetime', 'scan_options' => 'array', 'has_more' => 'boolean', 'mail_plan' => 'array', 'listing_tokens' => 'array', 'batch_started_at' => 'datetime', 'next_batch_at' => 'datetime'];
